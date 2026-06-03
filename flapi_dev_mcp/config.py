@@ -74,8 +74,14 @@ def build_config(
     default_major = baselight_major(default_root.get("version")) if default_root else None
     active_venv = resolve_venv(dr.python_dir, dr.python_minor, default_major)
 
-    # Context sources: bundled examples from the default release root, plus extras.
-    sources: list[dict] = []
+    # Context sources: the canonical enhancements repo (git) first, then the
+    # build's bundled examples, then any extra dirs the user registered.
+    sources: list[dict] = [{
+        "type": "git",
+        "path": str(REPO_DIR),
+        "url": "https://github.com/FilmLightAPI/enhancements.git",
+        "enabled": True,
+    }]
     for br in disc.release_roots:
         if br.examples is not None:
             sources.append({"type": "local", "path": str(br.examples), "enabled": True})

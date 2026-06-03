@@ -91,6 +91,19 @@ def _cmd_init(args: argparse.Namespace) -> int:
     if not d.release_roots:
         _miss("no release builds under /Applications/Baselight")
 
+    # Clone (or update) the canonical enhancements repo as the primary source.
+    _heading("Context repo")
+    if args.no_repo:
+        print(_dim("  skipped (--no-repo)"))
+    else:
+        from flapi_dev_mcp import repo
+        res = repo.clone_or_update()
+        if res["ok"]:
+            _ok(f"{res['action']} {res['commit'] or ''}", res["path"])
+        else:
+            _miss("clone enhancements repo (offline?); will retry on `update`")
+            print(_dim(f"      {res['message'].splitlines()[0] if res['message'] else ''}"))
+
     # Prompts: dev roots, flapid host, extra sources.
     dev_roots: list[tuple[str, str, str | None]] = list(args.dev_root or [])
     extra_sources: list[str] = list(args.source or [])
@@ -149,7 +162,12 @@ def _cmd_set_venv(args: argparse.Namespace) -> int:
 
 
 def _cmd_update(args: argparse.Namespace) -> int:
-    print("update: not implemented yet.", file=sys.stderr)
+    from flapi_dev_mcp import repo
+    res = repo.clone_or_update()
+    if res["ok"]:
+        print(f"{res['action']} ok @ {res['commit']}: {res['path']}")
+        return 0
+    print(f"update failed: {res['message']}", file=sys.stderr)
     return 1
 
 
@@ -190,6 +208,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="register a dev build root (repeatable)")
     p_init.add_argument("--source", action="append", metavar="PATH",
                         help="register an extra context source dir (repeatable)")
+    p_init.add_argument("--no-repo", action="store_true",
+                        help="skip cloning the enhancements repo (e.g. offline)")
 
     sub.add_parser("status", help="human-readable environment/config report")
 
