@@ -254,7 +254,7 @@ Lookup strategy:
 
 Simple, fast, debuggable. No embedding model, no vector store, no ML infrastructure.
 
-## Script Taxonomy: Two Camps
+## Script Taxonomy: App Scripts vs FLAPI Tools
 
 The single most important thing to establish before writing any FLAPI script is **which camp it belongs to**, because the two camps have completely different environments, lifecycles, and readiness requirements. A request like "turn Baselight scenes into a web page" is ambiguous until classified: it could be either camp. Classify first (scaffolding Phase 0), then run only the checks that camp needs.
 
