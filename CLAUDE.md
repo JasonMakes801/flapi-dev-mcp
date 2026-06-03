@@ -40,7 +40,7 @@ The `init` step is a **guided onboarding flow** built from rich sequential promp
 2. Clones the sibling repo (github.com/FilmLight/flapi) into ~/.flapi-dev-mcp/repo/ as the first context source
 3. Discovers the **data root** (`/Library/Application Support/FilmLight/`, macOS, Python only for v1): the active venv (via `blsiteprefs`), the `scripts/` and `server-scripts/` directories; and **release build roots** by scanning `/Applications/Baselight/*`. Confirms each detected path with the user
 4. Prompts for any **dev build roots** to register (since a FilmLight dev box has no `/Applications/Baselight`; e.g. a `dev-build` `.app` bundle or a `dev-source` checkout), in an "add another?" loop
-5. Prompts for anything discovery missed, the default build root, and the default flapid hostname (Camp A); notes auth (`flapi-token`) status and points to `fl-setup-flapi-token` if a remote target will be used
+5. Prompts for anything discovery missed, the default build root, and the default flapid hostname (FLAPI Tools); notes auth (`flapi-token`) status and points to `fl-setup-flapi-token` if a remote target will be used
 6. Prompts for any **extra context source directories** (studio script collections, other FLAPI-rich folders), in an "add another? (blank to finish)" loop
 7. Writes config.json with the `sources` and `baselight_roots` lists, discovered paths, and default hostname
 
@@ -160,9 +160,9 @@ The `flapi` package is pure-Python: one module per API class (`Application.py`, 
 
 > The bundled `share/flapi/examples/python/` and `share/flapi/schema/schema.json` are first-class context: index the examples as a source, and use the schema for `get_api_surface` / validation. The bundled `share/python/*.whl` are exactly what `fl-setup-flapi-scripts` uses for offline dependency installs.
 
-`release` roots are autodiscovered by scanning `/Applications/Baselight/*`; `dev-*` roots are user-added (init prompt or `config add-baselight-root <path> --kind dev-build|dev-source`). The active venv for Camp B is resolved live from `site_prefs` (`flapi_python_path__Mac`), never hardcoded. Each `sources` entry: `type` (`git`/`local`), `path`, optional `url`, `enabled`; on startup the server git-pulls enabled `git` sources and indexes all enabled sources.
+`release` roots are autodiscovered by scanning `/Applications/Baselight/*`; `dev-*` roots are user-added (init prompt or `config add-baselight-root <path> --kind dev-build|dev-source`). The active venv for App Scripts is resolved live from `site_prefs` (`flapi_python_path__Mac`), never hardcoded. Each `sources` entry: `type` (`git`/`local`), `path`, optional `url`, `enabled`; on startup the server git-pulls enabled `git` sources and indexes all enabled sources.
 
-### How flapi is installed for standalone (Camp A) scripts
+### How flapi is installed for standalone (FLAPI Tools) scripts
 
 A standalone script runs under an external Python that must be able to `import flapi`. There is **one mechanism for all root kinds: install the `filmlightapi` wheel into a venv.** (No PYTHONPATH-into-the-build trick: bundles ship only the wheel, and carrying a separate runtime-path code path isn't worth the brittleness.)
 
@@ -215,9 +215,9 @@ Two distinct trees, per the config split:
 - **Docs:** the `python/` and `common/` markdown under `flapi/docs/`, plus the generated `gen/doc/flapi/python.md` (full reference). See Context source #1.
 - **Installed versions** are discovered per root (release roots scanned under `/Applications/Baselight/*`; dev roots are user-registered).
 
-**C. Auth (per the docs, Baselight/Daylight 5.3+).** FLAPI connections require a username + token. Local connections resolve the token automatically for the current user. Remote connections need a username + token created via `fl-setup-flapi-token` on the server; the token is stored at macOS `~/Library/Preferences/FilmLight/flapi-token`. Camp A readiness checks token availability for remote targets.
+**C. Auth (per the docs, Baselight/Daylight 5.3+).** FLAPI connections require a username + token. Local connections resolve the token automatically for the current user. Remote connections need a username + token created via `fl-setup-flapi-token` on the server; the token is stored at macOS `~/Library/Preferences/FilmLight/flapi-token`. FLAPI Tools readiness checks token availability for remote targets.
 
-This provides the ground truth API surface for the version the developer targets. The target build root and (for Camp B) version are developer choices, not a single autodetected value. Restarting after an upgrade re-discovers everything.
+This provides the ground truth API surface for the version the developer targets. The target build root and (for App Scripts) version are developer choices, not a single autodetected value. Restarting after an upgrade re-discovers everything.
 
 > **Note:** `blsiteprefs` is site-wide and currently holds a single `flapi_python_path`. The interpreter can also be set in Baselight Preferences → Advanced : API Server. Per-user/per-build overrides are a later refinement; v1 treats the site pref as source of truth.
 
@@ -226,12 +226,12 @@ This provides the ground truth API surface for the version the developer targets
 Tool-specific content that doesn't belong in the FLAPI repo:
 
 - Pattern templates: canonical boilerplate for each script type (grouped by camp; see Script Taxonomy)
-  - **Camp A (standalone):**
+  - **FLAPI Tools (standalone):**
     - cli_script.py — headless command-line script (connect to flapid, do work, close)
     - flexi_script.py — script that triggers and manages Flexi effects
     - render_script.py — submitting render jobs via QueueManager
     - thumbnail_script.py — extracting frames via ThumbnailManager
-  - **Camp B (application, deployed into the app's script dirs):**
+  - **App Scripts (application, deployed into the app's script dirs):**
     - gui_script.py — UI script with menu items via ApplicationManager → `scripts/`
     - server_script.py — background processing with server script pattern → `server-scripts/`
 - Gotcha documents: known pitfalls with problem descriptions and solutions
@@ -258,7 +258,7 @@ Simple, fast, debuggable. No embedding model, no vector store, no ML infrastruct
 
 The single most important thing to establish before writing any FLAPI script is **which camp it belongs to**, because the two camps have completely different environments, lifecycles, and readiness requirements. A request like "turn Baselight scenes into a web page" is ambiguous until classified: it could be either camp. Classify first (scaffolding Phase 0), then run only the checks that camp needs.
 
-### Camp A — Standalone scripts (run *outside* Baselight)
+### FLAPI Tools — standalone scripts (run *outside* Baselight)
 
 - Executed by an **external** Python interpreter (terminal, cron, CI).
 - Reach a Baselight by connecting to a **flapid daemon** over the network.
@@ -266,7 +266,7 @@ The single most important thing to establish before writing any FLAPI script is 
 - Pattern types here: `cli_script`, and standalone uses of `render_script` / `thumbnail_script` / `flexi_script`.
 - **Readiness** (`check_standalone_readiness`): (1) a venv that can `import flapi` (the build-matching `filmlightapi` wheel installed), (2) flapid reachable or launchable, (3) auth token usable, (4) optional target job/scene.
 
-### Camp B — Application scripts (run *inside* Baselight)
+### App Scripts — run *inside* Baselight
 
 - Loaded by the **running application** from its configured Python venv, deployed into directories the app scans.
 - Already hold an in-process FLAPI connection, so there is **no daemon probing**.
@@ -281,11 +281,11 @@ The single most important thing to establish before writing any FLAPI script is 
 
 Claude routes the request before deep environment checks. It is not a tool; it is guidance Claude follows, asking the user when the request is ambiguous:
 
-- **Q1.** Must it run inside a colorist's live Baselight session, add menu items/dialogs, respond to events, or run continuous background processing tied to the app? → **Camp B.** Otherwise, is it a task that connects to a Baselight, does its work, and exits? → **Camp A.**
-- **Q2 (Camp B).** UI, server, or both? → selects `scripts/` vs `server-scripts/` and the `gui_script` / `server_script` pattern(s).
-- **Q3 (Camp A).** Any task flavor (render submit, thumbnail extraction, flexi) that pulls in a specific pattern.
+- **Q1.** Must it run inside a colorist's live Baselight session, add menu items/dialogs, respond to events, or run continuous background processing tied to the app? → **App Scripts.** Otherwise, is it a task that connects to a Baselight, does its work, and exits? → **FLAPI Tools.**
+- **Q2 (App Scripts).** UI, server, or both? → selects `scripts/` vs `server-scripts/` and the `gui_script` / `server_script` pattern(s).
+- **Q3 (FLAPI Tools).** Any task flavor (render submit, thumbnail extraction, flexi) that pulls in a specific pattern.
 
-Worked example, "scenes → web page": ask Q1. "Run it from my terminal / nightly" → Camp A exporter. "A menu item in Baselight that exports the current scene" → Camp B UI. "Regenerate whenever scenes change" → Camp B server.
+Worked example, "scenes → web page": ask Q1. "Run it from my terminal / nightly" → FLAPI Tools exporter. "A menu item in Baselight that exports the current scene" → App Scripts UI. "Regenerate whenever scenes change" → App Scripts server.
 
 ## MCP Tools
 
@@ -293,14 +293,14 @@ Worked example, "scenes → web page": ask Q1. "Run it from my terminal / nightl
 
 Environment checks are **camp-aware**. The two `check_*_readiness` aggregators below are the entry points Claude calls after classification; the atomic checks beneath them are the primitives they compose (and Claude can call directly for diagnostics).
 
-`check_standalone_readiness(hostname)` — **Camp A entry point**
-- Aggregates the Camp A requirements: (1) a venv that can `import flapi` (the build-matching `filmlightapi` wheel installed); (2) flapid reachable **or** launchable; (3) auth — a usable token (auto for local, username+token for remote).
+`check_standalone_readiness(hostname)` — **FLAPI Tools entry point**
+- Aggregates the FLAPI Tools requirements: (1) a venv that can `import flapi` (the build-matching `filmlightapi` wheel installed); (2) flapid reachable **or** launchable; (3) auth — a usable token (auto for local, username+token for remote).
 - flapid: the **common** mode is connecting to an already-running flapid (probe config host → localhost; if none, prompt for a hostname). The **rare** mode is `flapi.Connection().launch()`, which spawns a private child flapid from the build root, no running service needed; readiness reports this as a fallback when nothing is reachable.
 - Returns: ready (bool), per-requirement status with remediation for anything missing.
 
-`check_app_script_readiness(version, kind)` — **Camp B entry point**
+`check_app_script_readiness(version, kind)` — **App Scripts entry point**
 - `kind ∈ ui | server | both`.
-- Aggregates the Camp B requirements: the chosen Baselight `version` exists, its (Baselight-created) venv resolves and exists, the script's deps are present in that venv (or installable), and the destination directory (`scripts/` for ui, `server-scripts/` for server) exists and is writable. flapid here is the host Baselight process.
+- Aggregates the App Scripts requirements: the chosen Baselight `version` exists, its (Baselight-created) venv resolves and exists, the script's deps are present in that venv (or installable), and the destination directory (`scripts/` for ui, `server-scripts/` for server) exists and is writable. flapid here is the host Baselight process.
 - Returns: ready (bool), resolved venv path, destination dir(s), remediation for anything missing.
 
 `check_baselight_installation()` / `list_baselight_versions()`
@@ -319,7 +319,7 @@ Environment checks are **camp-aware**. The two `check_*_readiness` aggregators b
 
 `install_dependencies(version_or_venv, packages)`
 - Pip-installs `packages` into the resolved venv (never system Python, never another version's venv). For standalone client setup, also installs the `filmlightapi` wheel from the chosen root.
-- Does **not** create venvs (Baselight owns the Camp B venv; for a standalone client venv, point at `fl-setup-flapi-scripts` or a user-created venv).
+- Does **not** create venvs (Baselight owns the App Scripts venv; for a standalone client venv, point at `fl-setup-flapi-scripts` or a user-created venv).
 - Honors pip gotchas (version ordering, venv activation) in gotchas/.
 - Returns: install log, resulting installed versions. Safety: only ever targets a resolved venv.
 
@@ -327,7 +327,7 @@ Environment checks are **camp-aware**. The two `check_*_readiness` aggregators b
 - Attempts a FLAPI connection (default host: config/localhost), version-aware so it can report how to start that build's flapid or use `launch()` if unreachable.
 - Returns: connected, Baselight version, available jobs.
 - Errors: flapid not running (with start/launch remedy), connection refused, auth failure (with `fl-setup-flapi-token` remedy).
-- (Camp A primitive — Camp B app scripts connect back to their parent FilmLight process instead.)
+- (FLAPI Tools primitive — App Scripts connect back to their parent FilmLight process instead.)
 
 `check_python_environment()`
 - Checks which Python is active and whether `import flapi` works
@@ -374,20 +374,20 @@ Environment checks are **camp-aware**. The two `check_*_readiness` aggregators b
 `create_script(path, content)`
 - Writes a generated script to disk
 - Sets executable permissions
-- For **Camp B**, the destination is the app's script directory for the sub-type (`scripts/` for UI, `server-scripts/` for server) so the app can load it; for **Camp A**, the working directory. Claude resolves the destination from the camp before calling.
+- For **App Scripts**, the destination is the app's script directory for the sub-type (`scripts/` for UI, `server-scripts/` for server) so the app can load it; for **FLAPI Tools**, the working directory. Claude resolves the destination from the camp before calling.
 - Returns: file path
 
 `run_script(path, args)`
-- Executes a **Camp A** standalone script with the resolved venv interpreter, the venv into which the build-matching `filmlightapi` wheel and any third-party deps were installed, so `import flapi` resolves. No PYTHONPATH injection.
+- Executes a **FLAPI Tools** standalone script with the resolved venv interpreter, the venv into which the build-matching `filmlightapi` wheel and any third-party deps were installed, so `import flapi` resolves. No PYTHONPATH injection.
 - Captures stdout, stderr, return code
 - Returns: output and any errors
 - Timeout: 30 seconds default (configurable)
 - Safety: only runs scripts in a designated working directory
-- Note: Camp B application scripts are loaded by the running Baselight, not executed here; use `test_script` for those, and verify behavior inside the app.
+- Note: App Scripts are loaded by the running Baselight, not executed here; use `test_script` for those, and verify behavior inside the app.
 
 `test_script(path)`
 - Runs syntax check (python -m py_compile) using the resolved venv interpreter
-- Optionally runs with --dry-run or --test flag if supported (Camp A)
+- Optionally runs with --dry-run or --test flag if supported (FLAPI Tools)
 - Returns: pass/fail with details
 
 ### Repo tools
@@ -402,11 +402,11 @@ Environment checks are **camp-aware**. The two `check_*_readiness` aggregators b
 When a developer starts a conversation asking to build an FLAPI script, Claude should follow this sequence (guided by tool descriptions):
 
 ### Phase 0: Classify the camp (do this first)
-Run the classification decision tree (see Script Taxonomy). Determine **Camp A (standalone)** vs **Camp B (application)**, and for Camp B the sub-type (ui / server / both). Ask the user when the request is ambiguous, the "scenes → web page" case must not be guessed. The camp decides which checks run in Phase 1 and which pattern is selected in Phase 3.
+Run the classification decision tree (see Script Taxonomy). Determine **FLAPI Tools (standalone)** vs **App Scripts (application)**, and for App Scripts the sub-type (ui / server / both). Ask the user when the request is ambiguous, the "scenes → web page" case must not be guessed. The camp decides which checks run in Phase 1 and which pattern is selected in Phase 3.
 
 ### Phase 1: Environment check (camp-specific)
-- **Camp A:** call `check_standalone_readiness(hostname)`. It checks `import flapi`, flapid reachability (config host → localhost → prompt, or launch), and auth token. 
-- **Camp B:** call `list_baselight_versions()`, have the user pick a target version, then call `check_app_script_readiness(version, kind)`. If the venv is missing dependencies the script will need, call `install_dependencies(version, packages)`.
+- **FLAPI Tools:** call `check_standalone_readiness(hostname)`. It checks `import flapi`, flapid reachability (config host → localhost → prompt, or launch), and auth token. 
+- **App Scripts:** call `list_baselight_versions()`, have the user pick a target version, then call `check_app_script_readiness(version, kind)`. If the venv is missing dependencies the script will need, call `install_dependencies(version, packages)`.
 
 If readiness fails, help the developer fix the environment (start flapid, choose a version, install deps) before writing code.
 
@@ -415,10 +415,10 @@ Claude asks (guided by tool descriptions, not hardcoded):
 
 1. What do you want to accomplish? (export, conform, metadata, rendering, analysis, etc.)
 2. (Usually settled in Phase 0) Standalone or in-application? If in-application: UI, server, or both?
-3. **Camp A:** which Baselight host and job/scene are you targeting? **Camp B:** which Baselight version, and what dependencies will the script need in its venv?
+3. **FLAPI Tools:** which Baselight host and job/scene are you targeting? **App Scripts:** which Baselight version, and what dependencies will the script need in its venv?
 
 ### Phase 3: Template selection
-Based on the camp and sub-type, call get_pattern() for the right script type (Camp A: cli/render/thumbnail/flexi; Camp B: gui_script → `scripts/`, server_script → `server-scripts/`).
+Based on the camp and sub-type, call get_pattern() for the right script type (FLAPI Tools: cli/render/thumbnail/flexi; App Scripts: gui_script → `scripts/`, server_script → `server-scripts/`).
 
 ### Phase 4: Context injection
 Based on the task, call get_class_docs() for relevant classes, search_examples() for similar scripts, and search_gotchas() for known pitfalls.

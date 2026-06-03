@@ -114,7 +114,7 @@ def render_text(status: dict, color: bool = True) -> str:
     lines.append(row("JSON schema", status["schema"]))
     lines.append(row("bundled examples", status["bundled_examples"]))
 
-    lines.append(b("\nScript directories (Camp B)"))
+    lines.append(b("\nApp script directories (run inside Baselight)"))
     lines.append(row("UI scripts", status["ui_scripts_dir"]))
     lines.append(row("server scripts", status["server_scripts_dir"]))
 
