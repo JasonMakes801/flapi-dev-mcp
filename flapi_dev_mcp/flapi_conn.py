@@ -90,7 +90,8 @@ def check_standalone_readiness(hostname: str | None = None, project_dir: str = "
     # serving on :1984? A mismatch means the agent's docs/wheel may not match
     # the live flapid.
     from flapi_dev_mcp import discovery as disc
-    targeted_v = (venvs.default_layout().version if venvs.default_layout() else None)
+    targeted = venvs.default_layout()
+    targeted_v = targeted.version if targeted else None
     running = disc.detect_running_build() if is_local else None
     running_v = running.version if running else None
     build_match = {
@@ -103,10 +104,15 @@ def check_standalone_readiness(hostname: str | None = None, project_dir: str = "
     ready = bool(env.get("ok") and flapid.get("connected"))
     remedies = []
     if running_v and targeted_v and running_v != targeted_v:
+        restart_cmd = (f"sudo {targeted.app}/Contents/bin/fl-service restart flapi"
+                       if targeted and targeted.app else "sudo fl-service restart flapi")
         remedies.append(
-            f"build mismatch: the live flapid is build {running_v} ({running.app}), "
-            f"but you're targeting {targeted_v} — docs/wheel may not match. "
-            f"Run `flapi-dev-mcp target-running` to target the running build."
+            f"build mismatch: you chose target {targeted_v} (at init), but the live "
+            f"flapid is {running_v} ({running.app}). Two fixes — "
+            f"(1) make the server match your target (usual): restart flapid from your "
+            f"target build, `{restart_cmd}`, or launch that build's Baselight; "
+            f"(2) switch your target to the running build: `flapi-dev-mcp target-running`. "
+            f"Until then, docs/wheel are {targeted_v} but the server is {running_v}."
         )
     if not env.get("ok"):
         remedies.append("standalone venv / import flapi failed — see env detail")
