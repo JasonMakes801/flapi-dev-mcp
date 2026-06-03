@@ -18,8 +18,10 @@ from pathlib import Path
 from flapi_dev_mcp import config as cfgmod
 from flapi_dev_mcp import discovery as disc
 
-LOG_DIR = disc.DATA_ROOT / "log"
-RELOAD_PORT = 1984  # the FilmLight app server (flici) HTTP port
+# FilmLight writes per-process logs here; `/vol/.support/log` is the canonical
+# view (the <host>-flapid symlink there points at the live dir).
+LOG_DIRS = [Path("/vol/.support/log"), disc.DATA_ROOT / "log"]
+RELOAD_PORT = 1984  # flapid HTTP port (server-script reload)
 
 
 def _config() -> dict:
@@ -99,19 +101,35 @@ def check_app_script_readiness(kind: str = "both") -> dict:
         "import_flapi": imp,
         "deploy_dirs": dirs,
         "remedies": remedies,
-        "note": "Write the app script into the deploy dir, then load/reload it in Baselight. "
-                "Install any extra deps with install_app_dependencies (managed venv).",
+        "workflow": [
+            "1. Make output OBSERVABLE. As the script's FIRST action, redirect its own "
+            "stdout+stderr to a known file so even import/load errors are captured: "
+            "`import sys; _l=open('~/.flapi-dev-mcp/logs/<name>.log'.replace('~',str(Path.home())),'a',buffering=1); "
+            "sys.stdout=sys.stderr=_l`. You cannot see app-script return values, so this is mandatory.",
+            "2. Syntax-check before deploy: managed-venv python `-m py_compile <script>`.",
+            "3. Deploy: UI scripts → scripts/, server scripts → server-scripts/. Install extra deps "
+            "with install_app_dependencies (managed venv), NOT install_dependencies.",
+            "4. Reload: SERVER scripts → reload_app_scripts (flapid :1984). UI scripts → ask the user "
+            "to reload via Views > Scripts > (gear) > Reload Scripts (port-contended app server can't be "
+            "reloaded reliably from here), then click the menu item.",
+            "5. Verify: read the script's self-log file (native Read). For SERVER scripts you can also "
+            "get_flapi_log (the flapid console). For UI scripts, get_flapi_log will NOT have the output "
+            "(flapid = server scripts only) — rely on the self-log.",
+        ],
     }
 
 
-def reload_app_scripts(host: str = "localhost", timeout: int = 12) -> dict:
+def reload_app_scripts(host: str = "localhost", port: int = RELOAD_PORT, timeout: int = 12) -> dict:
     """Trigger Baselight's "Reload Scripts" action programmatically.
 
-    This is exactly what the Views > Scripts > (gear) > Reload Scripts button
-    does: an HTTP GET to http://<host>:1984/reload-scripts, which restarts the
-    FLAPI server's Python so newly-deployed/edited app scripts are picked up.
+    HTTP GET http://<host>:<port>/reload-scripts. NOTE: app scripts and server
+    scripts are served by DIFFERENT servers, each with this endpoint. The app
+    API server (UI scripts) uses the `flapi_port_number` pref — normally 1984,
+    but if multiple Baselights contend for 1984 the app server falls back to a
+    dynamic port. If reload doesn't pick up a UI script, you're likely hitting
+    flapid (server scripts) instead; pass the app server's actual port.
     """
-    url = f"http://{host}:{RELOAD_PORT}/reload-scripts"
+    url = f"http://{host}:{port}/reload-scripts"
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             body = r.read().decode(errors="replace").strip()
@@ -122,25 +140,29 @@ def reload_app_scripts(host: str = "localhost", timeout: int = 12) -> dict:
 
 
 def _current_log_file() -> Path | None:
-    """Best-effort: the log carrying flapid/app-script output.
+    """The live flapid (server-script) console log.
 
-    Logs are per-process `<host>-<proc>-<rand>/console.txt`. We try the
-    `<host>-flapid` symlink (file or dir/console.txt); if that's stale, fall
-    back to the most-recently-modified `console.txt` one level down.
+    Per-process logs are `<host>-<proc>-<rand>/console.txt`. The `<host>-flapid`
+    symlink points at the current dir; failing that, take the most recently
+    modified `*flapid*/console.txt`. NOTE: this is flapid = server scripts only;
+    app/UI script output is not written here (use the script's self-log).
     """
-    if not LOG_DIR.is_dir():
-        return None
-    for p in LOG_DIR.glob("*-flapid"):
-        try:
-            real = p.resolve()
-        except OSError:
+    for base in LOG_DIRS:
+        if not base.is_dir():
             continue
-        if real.is_file():
-            return real
-        if real.is_dir() and (real / "console.txt").is_file():
-            return real / "console.txt"
-    consoles = [c for c in LOG_DIR.glob("*/console.txt") if c.is_file()]
-    return max(consoles, key=lambda f: f.stat().st_mtime) if consoles else None
+        for p in base.glob("*-flapid"):
+            try:
+                real = p.resolve()
+            except OSError:
+                continue
+            console = real / "console.txt" if real.is_dir() else real
+            if console.is_file():
+                return console
+        consoles = [d / "console.txt" for d in base.glob("*flapid*")
+                    if (d / "console.txt").is_file()]
+        if consoles:
+            return max(consoles, key=lambda f: f.stat().st_mtime)
+    return None
 
 
 def get_flapi_log(lines: int = 80) -> dict:

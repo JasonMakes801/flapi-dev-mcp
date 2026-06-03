@@ -210,26 +210,30 @@ def install_dependencies(packages: list[str], project_dir: str = "") -> dict:
 
 
 @mcp.tool()
-def reload_app_scripts(host: str = "localhost") -> dict:
+def reload_app_scripts(host: str = "localhost", port: int = 1984) -> dict:
     """Reload Baselight's app scripts programmatically (the "Reload Scripts" button).
 
-    After writing/editing an App Script into scripts/ or server-scripts/, call
-    this to make Baselight pick it up — an HTTP GET to :1984/reload-scripts that
-    restarts the FLAPI server's Python. Catches load/parse errors right away
-    (check get_flapi_log after). For a UI menu item, the user still clicks the
-    item to trigger its action. Falls back to `sudo fl-service restart flapi`.
+    After writing/editing an App Script, call this to make Baselight pick it up
+    (HTTP GET :<port>/reload-scripts → restarts the server's Python). IMPORTANT:
+    UI scripts and server scripts are served by different servers. The UI/app
+    server uses the flapi_port_number pref (normally 1984); if a UI script
+    doesn't reload, you're likely hitting flapid (server scripts) — pass the app
+    server's real port. After reloading, read get_flapi_log for load errors; for
+    a UI menu item the user still clicks it. Fallback: `sudo fl-service restart flapi`.
     """
     from flapi_dev_mcp import app_scripts
-    return app_scripts.reload_app_scripts(host)
+    return app_scripts.reload_app_scripts(host, port)
 
 
 @mcp.tool()
 def get_flapi_log(lines: int = 80) -> dict:
-    """Tail the current FLAPI/flapid log to observe app-script output.
+    """Tail the live flapid console log — SERVER-script output and flapid errors.
 
-    App scripts can't return output to you directly; have them `print(..., flush=True)`
-    and read it here. Also surfaces load/parse tracebacks when Baselight fails to
-    load a script. Call after reload_app_scripts or after the user runs a menu item.
+    Reliably finds the current `<host>-flapid` log under /vol/.support/log. Use
+    after reloading a server script to see its output and any load tracebacks.
+    NOTE: this is flapid only (server scripts). UI/app-script output is NOT here —
+    for those, read the script's own self-log file (the readiness workflow makes
+    app scripts redirect stdout/stderr to ~/.flapi-dev-mcp/logs/<name>.log).
     """
     from flapi_dev_mcp import app_scripts
     return app_scripts.get_flapi_log(lines)
