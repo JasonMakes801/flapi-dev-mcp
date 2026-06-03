@@ -225,7 +225,7 @@ This provides the ground truth API surface for the version the developer targets
 
 Tool-specific content that doesn't belong in the FLAPI repo:
 
-- Pattern templates: canonical boilerplate for each script type (grouped by camp; see Script Taxonomy)
+- Pattern templates: canonical boilerplate for each script type (grouped by type; see Script Taxonomy)
   - **Standalone scripts:**
     - cli_script.py — headless command-line script (connect to flapid, do work, close)
     - flexi_script.py — script that triggers and manages Flexi effects
@@ -256,7 +256,7 @@ Simple, fast, debuggable. No embedding model, no vector store, no ML infrastruct
 
 ## Script Taxonomy: App Scripts vs Standalone scripts
 
-The single most important thing to establish before writing any FLAPI script is **which camp it belongs to**, because the two camps have completely different environments, lifecycles, and readiness requirements. A request like "turn Baselight scenes into a web page" is ambiguous until classified: it could be either camp. Classify first (scaffolding Phase 0), then run only the checks that camp needs.
+The single most important thing to establish before writing any FLAPI script is **which type it is**, because the two types have completely different environments, lifecycles, and readiness requirements. A request like "turn Baselight scenes into a web page" is ambiguous until classified: it could be either type. Classify first (scaffolding Phase 0), then run only the checks that type needs.
 
 ### Standalone scripts — run *outside* Baselight
 
@@ -291,7 +291,7 @@ Worked example, "scenes → web page": ask Q1. "Run it from my terminal / nightl
 
 ### Environment tools
 
-Environment checks are **camp-aware**. The two `check_*_readiness` aggregators below are the entry points Claude calls after classification; the atomic checks beneath them are the primitives they compose (and Claude can call directly for diagnostics).
+Environment checks are **type-aware**. The two `check_*_readiness` aggregators below are the entry points Claude calls after classification; the atomic checks beneath them are the primitives they compose (and Claude can call directly for diagnostics).
 
 `check_standalone_readiness(hostname)` — **Standalone scripts entry point**
 - Aggregates the Standalone scripts requirements: (1) a venv that can `import flapi` (the build-matching `filmlightapi` wheel installed); (2) flapid reachable **or** launchable; (3) auth — a usable token (auto for local, username+token for remote).
@@ -404,7 +404,7 @@ When a developer starts a conversation asking to build an FLAPI script, Claude s
 ### Phase 0: Classify the script type (do this first)
 Run the classification decision tree (see Script Taxonomy). Determine **Standalone scripts** vs **App Scripts**, and for App Scripts the sub-type (ui / server / both). Ask the user when the request is ambiguous, the "scenes → web page" case must not be guessed. The classification decides which checks run in Phase 1 and which pattern is selected in Phase 3.
 
-### Phase 1: Environment check (camp-specific)
+### Phase 1: Environment check (type-specific)
 - **Standalone scripts:** call `check_standalone_readiness(hostname)`. It checks `import flapi`, flapid reachability (config host → localhost → prompt, or launch), and auth token. 
 - **App Scripts:** call `list_baselight_versions()`, have the user pick a target version, then call `check_app_script_readiness(version, kind)`. If the venv is missing dependencies the script will need, call `install_dependencies(version, packages)`.
 
