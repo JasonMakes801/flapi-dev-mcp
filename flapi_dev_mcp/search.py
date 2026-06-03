@@ -49,6 +49,68 @@ def _read(path: Path) -> str | None:
         return None
 
 
+def _readme_summary(folder: Path) -> tuple[str | None, str | None]:
+    """Return (title, one-line description) from a folder's README, if any."""
+    for name in ("README.md", "readme.md", "Readme.md"):
+        p = folder / name
+        if not p.is_file():
+            continue
+        title = desc = None
+        for line in (_read(p) or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                if title is None:
+                    title = line.lstrip("#").strip()
+                continue
+            if title is None:
+                title = line  # README with no heading
+            elif desc is None:
+                desc = line
+                break
+        return title, desc
+    return None, None
+
+
+def build_catalog(sources: list[dict] | None = None) -> list[dict]:
+    """List every enhancement (a folder with a README) + its one-line summary.
+
+    A 'table of contents' for browsing when search comes up sparse. Falls back
+    to listing .py files for sources that have no READMEs (e.g. bundle examples).
+    """
+    sources = sources if sources is not None else _enabled_sources()
+    entries: list[dict] = []
+    for src in sources:
+        root = src["path"]
+        readme_folders: set[Path] = set()
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            if any(f.lower() == "readme.md" for f in filenames):
+                readme_folders.add(Path(dirpath))
+        if readme_folders:
+            for folder in readme_folders:
+                rel = folder.relative_to(root)
+                if str(rel) == ".":
+                    continue  # skip the source's top-level README
+                title, desc = _readme_summary(folder)
+                entries.append({
+                    "name": str(rel),
+                    "title": title or str(rel),
+                    "desc": desc or "",
+                    "source": str(root),
+                })
+        else:
+            for path in _iter_files(root):
+                if path.suffix == ".py":
+                    entries.append({
+                        "name": str(path.relative_to(root)),
+                        "title": path.stem, "desc": "", "source": str(root),
+                    })
+    entries.sort(key=lambda e: e["name"].lower())
+    return entries
+
+
 def search_examples(query: str, limit: int = 10, snippets_per_file: int = 3) -> dict:
     """Score files across sources by query-term hits in path + content."""
     terms = [t for t in query.lower().split() if t]
@@ -97,9 +159,16 @@ def search_examples(query: str, limit: int = 10, snippets_per_file: int = 3) -> 
             })
 
     results.sort(key=lambda r: r["score"], reverse=True)
-    return {
+    out = {
         "query": query,
         "sources_searched": [str(s["path"]) for s in sources],
         "total_matches": len(results),
         "results": results[:limit],
     }
+    # Sparse results → attach the full catalog so the agent can browse what
+    # exists rather than guess search terms blindly.
+    if len(results) < 3:
+        out["catalog"] = build_catalog(sources)
+        out["note"] = ("Few/no direct matches — `catalog` lists every available "
+                       "example with a one-line description; adapt the closest one.")
+    return out
