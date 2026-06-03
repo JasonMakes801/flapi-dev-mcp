@@ -85,7 +85,8 @@ flapi-dev-mcp/
     tools/
       environment.py     # check_baselight, check_flapid, check_python, list_jobs, validate_scene
       context.py         # get_class_docs, get_pattern, search_examples, search_gotchas, get_api_surface
-      scripts.py         # create_script, run_script, test_script
+      # (no script create/run/test tools — Claude Code does that natively;
+      #  app-script support: check_app_script_readiness, install_app_dependencies)
     patterns/            # Boilerplate templates per script type (tool-specific, lives here)
     gotchas/             # Known pitfalls with solutions (tool-specific, lives here)
 ```
@@ -369,26 +370,26 @@ Environment checks are **type-aware**. The two `check_*_readiness` aggregators b
 - Returns: summary of all available classes and their methods
 - Useful for Claude to understand the full scope of what's possible
 
-### Script tools
+### Script creation / execution — handled by Claude Code natively (no MCP tools)
 
-`create_script(path, content)`
-- Writes a generated script to disk
-- Sets executable permissions
-- For **App Scripts**, the destination is the app's script directory for the sub-type (`scripts/` for UI, `server-scripts/` for server) so the app can load it; for **Standalone scripts**, the working directory. Claude resolves the destination from the script type before calling.
-- Returns: file path
+The original spec proposed `create_script` / `run_script` / `test_script`. Testing
+showed they're **redundant**: Claude Code already writes files and runs commands,
+and the env/venv tools tell it exactly which interpreter and directories to use.
+In practice the agent, given `check_standalone_readiness` output, wrote a correct
+standalone script and ran it with the standalone venv interpreter (verified via
+`sys.executable`) entirely through its native abilities. So:
 
-`run_script(path, args)`
-- Executes a **Standalone scripts** standalone script with the resolved venv interpreter, the venv into which the build-matching `filmlightapi` wheel and any third-party deps were installed, so `import flapi` resolves. No PYTHONPATH injection.
-- Captures stdout, stderr, return code
-- Returns: output and any errors
-- Timeout: 30 seconds default (configurable)
-- Safety: only runs scripts in a designated working directory
-- Note: App Scripts are loaded by the running Baselight, not executed here; use `test_script` for those, and verify behavior inside the app.
+- **Standalone scripts:** the agent writes the file (native), then runs it with the
+  standalone venv interpreter reported by `check_standalone_readiness`
+  (`~/.flapi-dev-mcp/venvs/<version>/bin/python`).
+- **App Scripts:** the agent writes the file into the deploy dir reported by
+  `check_app_script_readiness` (`scripts/` for UI, `server-scripts/` for server);
+  Baselight loads it. Dependencies go into Baselight's managed venv via
+  `install_app_dependencies`.
 
-`test_script(path)`
-- Runs syntax check (python -m py_compile) using the resolved venv interpreter
-- Optionally runs with --dry-run or --test flag if supported (Standalone scripts)
-- Returns: pass/fail with details
+These dedicated tools are intentionally **not** provided. (If a future agent is ever
+seen running a script with the wrong interpreter, a minimal interpreter-guaranteeing
+`run_script` is a cheap add — but it isn't needed today.)
 
 ### Repo tools
 
@@ -424,7 +425,7 @@ Based on the classification and sub-type, call get_pattern() for the right scrip
 Based on the task, call get_class_docs() for relevant classes, search_examples() for similar scripts, and search_gotchas() for known pitfalls.
 
 ### Phase 5: Generate and test
-Claude writes the script. Calls create_script() to save it. Calls test_script() or run_script() to verify. Iterates on errors.
+Claude writes the script natively (no MCP tool needed). For **Standalone scripts**, it runs the file with the standalone venv interpreter from `check_standalone_readiness`, inspects output, and iterates. For **App Scripts**, it writes into the deploy dir from `check_app_script_readiness`, installs any deps via `install_app_dependencies`, and the user verifies in the running Baselight.
 
 ## Tool Descriptions
 
@@ -481,10 +482,11 @@ Returns connection status, Baselight version, and available jobs.
 - Implement get_class_docs() (introspection + repo docs fallback)
 - Implement get_pattern(), search_examples(), search_gotchas(), get_api_surface()
 
-### Step 6: Script creation and testing
-- Implement create_script(), test_script(), run_script()
-- Safety: sandbox to working directory, timeout on execution
-- Test: Claude can generate, save, and test a script end-to-end
+### Step 6: Execution support (no dedicated script tools)
+- Script writing/running is handled by Claude Code natively; the MCP just tells it
+  the right interpreter (`check_standalone_readiness`) and deploy dirs / managed-venv
+  deps (`check_app_script_readiness`, `install_app_dependencies`)
+- Test: Claude can generate, run (standalone) or deploy (app), and iterate end-to-end
 
 ### Step 7: Polish tool descriptions
 - Iterate on tool descriptions to guide Claude through the scaffolding flow
@@ -495,5 +497,5 @@ Returns connection status, Baselight version, and available jobs.
 - Resilient to missing Baselight. If no Baselight is found, still works with repo context and bundled patterns. Useful for writing scripts offline.
 - Resilient to missing repo. If init hasn't been run or clone failed, still works with local Baselight introspection and bundled patterns. Degrades gracefully.
 - Class docs can be auto-generated from `flapi` module introspection (or by reusing the build's generated `python.md`). Consider a generate_docs command that creates markdown from the live API.
-- run_script needs careful sandboxing. Never execute outside the working directory. Timeout all executions.
+- Script execution is Claude Code's job (native Write + Bash, permission-gated and timed out); the MCP only resolves the correct interpreter and deploy locations.
 - Complementary to Erik's flapi_mcp. This helps you write scripts. Erik's runs them.

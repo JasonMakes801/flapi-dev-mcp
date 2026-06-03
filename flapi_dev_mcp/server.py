@@ -129,6 +129,32 @@ def get_class_docs(class_name: str) -> dict:
 
 
 @mcp.tool()
+def check_app_script_readiness(kind: str = "both") -> dict:
+    """Are we ready to deploy an App Script (one that runs inside Baselight)?
+
+    kind: 'ui' (menu items/dialogs → scripts/), 'server' (background →
+    server-scripts/), or 'both'. Checks Baselight's managed venv (`import flapi`)
+    and that the deploy directory exists and is writable. Returns the deploy
+    dir(s) to write the script into and the managed-venv interpreter, plus
+    remedies. Call this when writing an App Script (vs a standalone script).
+    """
+    from flapi_dev_mcp import app_scripts
+    return app_scripts.check_app_script_readiness(kind)
+
+
+@mcp.tool()
+def install_app_dependencies(packages: list[str]) -> dict:
+    """Pip-install packages into Baselight's MANAGED venv (where App Scripts run).
+
+    Use for deps an App Script imports beyond flapi (e.g. Pillow). This is the
+    App-Script counterpart of install_dependencies (which targets the separate
+    standalone venv). Returns install status and a tail of the pip log.
+    """
+    from flapi_dev_mcp import app_scripts
+    return app_scripts.install_app_dependencies(packages)
+
+
+@mcp.tool()
 def check_flapid(hostname: str = "") -> dict:
     """Check whether a Baselight FLAPI daemon (flapid) is reachable.
 
