@@ -138,29 +138,30 @@ def reload_app_scripts(host: str = "localhost", port: int = RELOAD_PORT, timeout
 
 
 def _current_log_file() -> Path | None:
-    """The live flapid (server-script) console log.
+    """The LIVE flapid (server-script) console log, found dynamically.
 
-    Per-process logs are `<host>-<proc>-<rand>/console.txt`. The `<host>-flapid`
-    symlink points at the current dir; failing that, take the most recently
-    modified `*flapid*/console.txt`. NOTE: this is flapid = server scripts only;
-    app/UI script output is not written here (use the script's self-log).
+    Per-process logs are `<host>-<proc>-<rand>/console.txt` (ephemeral suffixes).
+    We gather every `*flapid*` entry across the log dirs, resolving the
+    `<host>-flapid` symlinks to their live dirs, and return the most recently
+    MODIFIED console.txt — i.e. the one actively being written. Never hardcodes a
+    suffix and won't return a stale/other-host log. (flapid = server scripts only;
+    app/UI output is in plugins.log, see get_app_script_log.)
     """
+    candidates: dict[str, Path] = {}
     for base in LOG_DIRS:
         if not base.is_dir():
             continue
-        for p in base.glob("*-flapid"):
+        for entry in base.glob("*flapid*"):
             try:
-                real = p.resolve()
+                real = entry.resolve()
             except OSError:
                 continue
             console = real / "console.txt" if real.is_dir() else real
             if console.is_file():
-                return console
-        consoles = [d / "console.txt" for d in base.glob("*flapid*")
-                    if (d / "console.txt").is_file()]
-        if consoles:
-            return max(consoles, key=lambda f: f.stat().st_mtime)
-    return None
+                candidates[str(console)] = console  # dedupe symlink+dir → same file
+    if not candidates:
+        return None
+    return max(candidates.values(), key=lambda f: f.stat().st_mtime)
 
 
 def get_flapi_log(lines: int = 80) -> dict:
