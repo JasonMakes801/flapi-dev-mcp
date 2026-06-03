@@ -86,8 +86,28 @@ def check_standalone_readiness(hostname: str | None = None, project_dir: str = "
     is_local = host in ("localhost", "127.0.0.1", "")
     token_ok = is_local or auth_token_present()
 
+    # Is the build we're targeting (wheel/docs) the same as the one actually
+    # serving on :1984? A mismatch means the agent's docs/wheel may not match
+    # the live flapid.
+    from flapi_dev_mcp import discovery as disc
+    targeted_v = (venvs.default_layout().version if venvs.default_layout() else None)
+    running = disc.detect_running_build() if is_local else None
+    running_v = running.version if running else None
+    build_match = {
+        "targeted": targeted_v,
+        "running": running_v,
+        "match": (running_v is None) or (running_v == targeted_v),
+        "running_app": str(running.app) if running else None,
+    }
+
     ready = bool(env.get("ok") and flapid.get("connected"))
     remedies = []
+    if running_v and targeted_v and running_v != targeted_v:
+        remedies.append(
+            f"build mismatch: the live flapid is build {running_v} ({running.app}), "
+            f"but you're targeting {targeted_v} — docs/wheel may not match. "
+            f"Run `flapi-dev-mcp target-running` to target the running build."
+        )
     if not env.get("ok"):
         remedies.append("standalone venv / import flapi failed — see env detail")
     if not flapid.get("connected"):
@@ -107,5 +127,6 @@ def check_standalone_readiness(hostname: str | None = None, project_dir: str = "
                  "import_flapi": env.get("import_flapi")},
         "flapid": flapid,
         "auth": {"local_auto": is_local, "token_present": auth_token_present(), "ok": token_ok},
+        "build_match": build_match,
         "remedies": remedies,
     }

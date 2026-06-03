@@ -19,6 +19,7 @@ never raise, so the MCP still works with a partial environment.
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -215,6 +216,37 @@ def resolve_layout(root_path: Path, kind: str, label: str | None = None) -> Buil
     br.offline_wheels = offline if offline.is_dir() else None
 
     return br
+
+
+def detect_running_build() -> BuildRoot | None:
+    """Resolve the Baselight build actually serving on :1984 (the live flapid/app).
+
+    Finds the listening process, resolves its executable to the enclosing
+    `.app`, and returns its layout. This is the build you're really talking to,
+    which may differ from the configured target (see mismatch check).
+    """
+    try:
+        r = subprocess.run(["lsof", "-nP", "-iTCP:1984", "-sTCP:LISTEN"],
+                           capture_output=True, text=True, timeout=8)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    pids = []
+    for line in r.stdout.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) > 1 and parts[1].isdigit():
+            pids.append(parts[1])
+    for pid in dict.fromkeys(pids):
+        try:
+            exe = subprocess.run(["ps", "-o", "comm=", "-p", pid],
+                                 capture_output=True, text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            continue
+        app = next((anc for anc in [Path(exe), *Path(exe).parents] if anc.suffix == ".app"), None)
+        if app is None:
+            continue
+        kind = "release" if str(app).startswith(str(APPS_DIR)) else "dev-build"
+        return resolve_layout(app, kind=kind)
+    return None
 
 
 def discover_release_roots() -> list[BuildRoot]:

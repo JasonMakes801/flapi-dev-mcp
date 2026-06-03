@@ -161,6 +161,35 @@ def _cmd_set_venv(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_target_running(args: argparse.Namespace) -> int:
+    cfg = cfgmod.load_config()
+    if cfg is None:
+        print("No config. Run `flapi-dev-mcp init` first.", file=sys.stderr)
+        return 1
+    br = disc.detect_running_build()
+    if br is None or br.app is None:
+        print("Could not detect a running Baselight on :1984 (is it running?).", file=sys.stderr)
+        return 1
+    path = str(br.app)
+    roots = cfg.setdefault("baselight_roots", [])
+    if not any(r.get("path") == path for r in roots):
+        roots.append({"kind": br.kind, "path": path, "version": br.version,
+                      "label": "running", "enabled": True})
+    cfg["default_root"] = path
+    dr = disc.discover_data_root()
+    av = disc.resolve_venv(dr.python_dir, dr.python_minor, disc.baselight_major(br.version))
+    cfg.setdefault("baselight", {})["active_venv"] = str(av) if av else None
+    cfgmod.save_config(cfg)
+    print(f"Now targeting the running build {br.version}")
+    print(f"  app:    {path}")
+    print(f"  wheel:  {br.wheel}")
+    print(f"  venv:   {av}")
+    if not br.wheel:
+        print(_yellow("  warning: no filmlightapi wheel found in this build"))
+    print(_dim("  Re-run setup_standalone_env(reinstall_wheel=true) to install this build's wheel."))
+    return 0
+
+
 def _cmd_update(args: argparse.Namespace) -> int:
     from flapi_dev_mcp import repo
     res = repo.clone_or_update()
@@ -216,6 +245,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_setvenv = sub.add_parser("set-venv", help="override the auto-derived venv (blank to clear)")
     p_setvenv.add_argument("path", nargs="?", default=None, help="venv path, or omit to clear the override")
 
+    sub.add_parser("target-running", help="target the Baselight build currently running on :1984")
+
     sub.add_parser("update", help="git-pull context sources and re-index")
     sub.add_parser("config", help="print raw config.json")
 
@@ -235,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
         "init": _cmd_init,
         "status": _cmd_status,
         "set-venv": _cmd_set_venv,
+        "target-running": _cmd_target_running,
         "update": _cmd_update,
         "config": _cmd_config,
     }[args.command](args)
