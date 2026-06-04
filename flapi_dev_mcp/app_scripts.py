@@ -29,14 +29,57 @@ def _config() -> dict:
     return cfgmod.load_config() or {}
 
 
+def _fl_setup_scripts() -> Path | None:
+    """Path to the target build's fl-setup-flapi-scripts (the venv manager)."""
+    cfg = _config()
+    default = cfg.get("default_root")
+    roots = cfg.get("baselight_roots", [])
+    ordered = sorted(roots, key=lambda r: r.get("path") != default)  # default first
+    for r in ordered:
+        layout = disc.resolve_layout(Path(r["path"]), r.get("kind", "release"), r.get("label"))
+        if layout.setup_scripts:
+            return layout.setup_scripts
+    for br in disc.discover().release_roots:
+        if br.setup_scripts:
+            return br.setup_scripts
+    return None
+
+
+def _venv_via_fl_setup() -> Path | None:
+    """Ask Baselight's own fl-setup-flapi-scripts where the managed venv is (`-e`).
+
+    Authoritative — no blsiteprefs parsing or venv-name guessing, and it returns a
+    sensible default (3.12) even when no interpreter pref is set.
+    """
+    fss = _fl_setup_scripts()
+    if not fss or not Path(fss).exists():
+        return None
+    try:
+        r = subprocess.run([str(fss), "-e"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = r.stdout.strip()
+    return Path(path) if r.returncode == 0 and path else None
+
+
 def managed_venv() -> Path | None:
-    """The Baselight-managed venv app scripts run in (from config, or derived)."""
+    """The Baselight-managed venv app scripts run in.
+
+    Primary: ask `fl-setup-flapi-scripts -e` (authoritative, no prefs needed).
+    Fallbacks: the cached config `active_venv`, then derive from prefs + major.
+    Returns an existing venv dir, else the best-known intended path (so callers
+    can report "not created yet").
+    """
+    intended = _venv_via_fl_setup()
+    if intended is not None and (intended / "bin" / "python").exists():
+        return intended
+
     cfg = _config()
     bl = cfg.get("baselight", {})
     av = bl.get("active_venv")
     if av and (Path(av) / "bin" / "python").exists():
         return Path(av)
-    # derive from prefs python + default root major
+
     dr = disc.discover_data_root()
     default = cfg.get("default_root")
     major = None
@@ -44,7 +87,10 @@ def managed_venv() -> Path | None:
         if r.get("path") == default:
             major = disc.baselight_major(r.get("version"))
             break
-    return disc.resolve_venv(dr.python_dir, dr.python_minor, major)
+    derived = disc.resolve_venv(dr.python_dir, dr.python_minor, major)
+    # Prefer the script's intended path (even if not yet created) over a None derive,
+    # so readiness can point at the right place to create.
+    return derived or intended
 
 
 def _import_flapi(venv: Path) -> dict:
@@ -172,7 +218,7 @@ def get_flapi_log(lines: int = 80) -> dict:
     script to see what happened."""
     f = _current_log_file()
     if f is None:
-        return {"ok": False, "error": f"no flapid log found under {LOG_DIR}"}
+        return {"ok": False, "error": f"no flapid log found under {LOG_DIRS}"}
     try:
         text = f.read_text(errors="replace")
     except OSError as e:
