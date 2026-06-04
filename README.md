@@ -7,10 +7,6 @@ verify they work. macOS + Python only for v1.
 
 See [CLAUDE.md](CLAUDE.md) for the full design spec.
 
-## Status
-
-Step 1 (skeleton) is in place: a stdio MCP server exposing a single `flapi_dev_ping`
-connectivity tool, plus a CLI with stubbed `init` / `update` / `config` subcommands.
 
 ## Install (macOS, via uv)
 
@@ -29,11 +25,23 @@ uv tool update-shell                 # one-time: puts the command on PATH (resta
 # 3. Onboard (discovers Baselight, clones the examples repo, writes config):
 flapi-dev-mcp init
 
-# 4. Register with Claude Code (available in all your projects):
+# 4. Register with Claude Code, user scope = available in every project:
 claude mcp add --scope user flapi-dev flapi-dev-mcp
 ```
 
-Then open Claude Code in any folder and ask it to write a FLAPI script.
+## Using it in a project
+
+Setup above is **one-time**. Because step 4 registers `flapi-dev` at **user scope**,
+it's available in **every** Claude Code session automatically, there's nothing to
+add or approve per project. To work on a new script:
+
+```bash
+mkdir ~/my-flapi-script && cd ~/my-flapi-script
+claude        # flapi-dev is already here; just ask it to write a FLAPI script
+```
+
+(When the agent writes a *standalone* script, it puts that project's Python venv
+right in the folder as `.venv`, so each project stays self-contained.)
 
 ## Updating
 
