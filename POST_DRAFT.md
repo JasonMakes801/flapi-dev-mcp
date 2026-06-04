@@ -33,20 +33,16 @@ To me this feels like demo material for the ongoing FLAPI workshops: closing wit
 macOS + Baselight + [uv](https://docs.astral.sh/uv/):
 
 ```
+brew install uv   # if you don't have it
 
-brew install uv # if you don't have it
+uv tool install git+https://github.com/JasonMakes801/flapi-dev-mcp
+uv tool update-shell   # one-time: puts the command on PATH (restart your shell)
 
-git clone https://github.com/JasonMakes801/flapi-dev-mcp 
-
-uv tool install ./flapi-dev-mcp && uv tool update-shell
-
-flapi-dev-mcp init # discovers your Baselight, clones the examples repo, writes config
-
-claude mcp add --scope user flapi-dev flapi-dev-mcp # register it with Claude Code so it appears in all your sessions
-
+flapi-dev-mcp init   # discovers your Baselight, clones the examples repo, writes config
+claude mcp add --scope user flapi-dev flapi-dev-mcp   # register with Claude Code (all your sessions)
 ```
 
-Then open Claude Code in any folder and just ask it to write a FLAPI script.
+Then open Claude Code in any folder and just ask it to write a FLAPI script. To update later: `uv tool upgrade flapi-dev-mcp`.
 
 ## Where this could go
 

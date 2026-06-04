@@ -170,7 +170,7 @@ A standalone script runs under an external Python that must be able to `import f
 - Use a venv with a compatible Python (3.9+, default 3.12). Reuse the Baselight-created venv, or create/update one with `fl-setup-flapi-scripts --create`.
 - `‹venv›/bin/pip install ‹root›/…/share/flapi/python/filmlightapi-‹ver›-py3-none-any.whl` (path per the layout table; resolved by `get_flapi_wheel`).
 - Run the script with that venv's interpreter: `import flapi` resolves, alongside any third-party deps installed in the same venv (`install_dependencies`).
-- Offline: `fl-setup-flapi-scripts --collect /tmp/packages` gathers the wheels; copy them over and `pip install /tmp/packages/*.whl`.
+- Offline: `fl-setup-flapi-scripts --collect-packages <package> <dir>` gathers a package's dependency wheels into `<dir>`; copy them over and `pip install <dir>/*.whl`.
 
 **Optional, only when actively hacking on flapi itself** (a `dev-source` root): `pip install -e ‹checkout›/build/**/gen/flapi/python` for an editable install that tracks rebuilds without reinstalling. This stays a one-time setup choice, not a per-run behavior.
 

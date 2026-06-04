@@ -22,23 +22,26 @@ there's no venv to manage by hand.
 # 1. Install uv if you don't have it:
 brew install uv                      # or: curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install the server as a tool (from a clone, or once published, a git URL):
-uv tool install .                    # run from the cloned repo
-uv tool update-shell                 # one-time: ensures the command is on PATH (restart your shell)
+# 2. Install the server as a tool, straight from the git URL:
+uv tool install git+https://github.com/JasonMakes801/flapi-dev-mcp
+uv tool update-shell                 # one-time: puts the command on PATH (restart your shell)
 
-# 3. Onboard (discovers Baselight, writes ~/.flapi-dev-mcp/config.json):
+# 3. Onboard (discovers Baselight, clones the examples repo, writes config):
 flapi-dev-mcp init
 
-# 4. Check it:
-flapi-dev-mcp status
+# 4. Register with Claude Code (available in all your projects):
+claude mcp add --scope user flapi-dev flapi-dev-mcp
 ```
 
-## Using from Claude Code
+Then open Claude Code in any folder and ask it to write a FLAPI script.
 
-`.mcp.json` at the repo root registers the server as `flapi-dev` via the
-`flapi-dev-mcp` command (on PATH after `uv tool install`). Open this project in
-Claude Code, approve the project MCP server, and ask Claude to call
-`flapi_dev_ping` to confirm connectivity.
+## Updating
+
+```bash
+uv tool upgrade flapi-dev-mcp        # pulls the latest release
+# if a change doesn't show up, force a clean re-fetch:
+uv tool install --reinstall git+https://github.com/JasonMakes801/flapi-dev-mcp
+```
 
 ## Contributing
 
