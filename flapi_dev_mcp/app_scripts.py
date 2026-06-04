@@ -86,8 +86,10 @@ def check_app_script_readiness(kind: str = "both") -> dict:
 
     remedies = []
     if not venv_ok or not imp["ok"]:
-        remedies.append("Baselight's managed venv missing or `import flapi` fails — "
-                        "launch Baselight (it creates the venv) or run `fl-setup-flapi-scripts --create`")
+        remedies.append("Baselight's managed venv missing or `import flapi` fails — if you've "
+                        "never set the FLAPI Python interpreter, set it in Baselight Preferences "
+                        "> Advanced > API Server first; then launch Baselight (it builds the venv "
+                        "on startup) or run `fl-setup-flapi-scripts --create`.")
     for name, d in dirs.items():
         if not d["exists"]:
             remedies.append(f"{name} script dir missing: {d['path']}")
