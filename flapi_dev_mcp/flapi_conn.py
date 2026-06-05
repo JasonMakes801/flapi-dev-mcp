@@ -155,8 +155,11 @@ def connection_selector(choice: str = "", host: str = "", port: int = 0,
                  "available": bool(layout and layout.flapid),
                  "example": 'conn = flapi.Connection(); conn.launch(); conn.connect()'},
                 {"type": "remote",
-                 "desc": "Connect to another machine's flapid (port 1984) or running app (1985). "
-                         "Pass host (+ port); needs a token from fl-setup-flapi-token on that host.",
+                 "desc": "Connect to ANOTHER machine's flapid (1984) or running app (1985). Not "
+                         "probed here (no host to test) — it's a build-time option. The user must "
+                         "supply hostname + username + a token (created via fl-setup-flapi-token on "
+                         "that host). Use for e.g. 'check if BL is running / what version on host X'.",
+                 "requires": ["hostname", "username", "token"],
                  "example": 'flapi.Connection("<host>", <port>, "<user>")'},
             ],
             "guidance": ("Pick by task: live/open scene, cursor, or live thumbnails -> 'app'; "
@@ -179,8 +182,38 @@ def connection_selector(choice: str = "", host: str = "", port: int = 0,
             "note": "Not live-probed (it spawns a daemon). Use when no flapid is running.",
         }
 
-    # route 'remote' by port: 1985 -> app, else flapid
-    as_app = choice == "app" or (choice == "remote" and (port or 0) == 1985)
+    if choice == "remote":
+        # Build-time option: emit a parameterized snippet + the prerequisites.
+        # Do NOT gate on a live connection (the target may be unreachable now, and
+        # the token may not be set up locally). Best-effort probe only if a real
+        # host was supplied — and report it as informational.
+        h = host or "<host>"
+        p = port or 1984
+        u = username or "<user>"
+        is_app = p == 1985
+        body = ('app = conn.Application.get()\ninfo = app.get_application_info()\n'
+                if is_app else 'info = conn.Application.get_application_info()\n')
+        out = {
+            "mode": "emit", "choice": "remote",
+            "requires": ["hostname", "username", "token"],
+            "token_present_locally": auth_token_present(),
+            "token_path": str(TOKEN_PATH),
+            "note": (f"Remote is not probed. The user supplies host/username, and a token "
+                     f"must be created on the target with `fl-setup-flapi-token` (stored at "
+                     f"{TOKEN_PATH}). get_application_info() reports the running build/version."),
+            "snippet": (f'conn = flapi.Connection("{h}", {p}, "{u}")\n'
+                        f'conn.connect()                      # token must exist for {h}\n'
+                        f'{body}'
+                        f'# ... work ...\n'
+                        f'conn.close()'),
+        }
+        if host:  # concrete host given — informational reachability check, not a gate
+            probe = (check_app_connection(p, username, host, project_dir)
+                     if is_app else check_flapid(host, project_dir))
+            out["probe"] = {"connected": probe.get("connected"), "error": probe.get("error")}
+        return out
+
+    as_app = choice == "app"
     if as_app:
         h = host or "localhost"
         res = check_app_connection(port or 1985, user, h, project_dir)
