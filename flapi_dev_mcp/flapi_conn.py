@@ -42,6 +42,175 @@ except Exception as e:
 """
 
 
+# Connect to the RUNNING app's API server (default :1985) and report live state.
+# argv: port, username.
+_APP_PROBE = r"""
+import json, sys, getpass
+port = int(sys.argv[1])
+user = sys.argv[2] or getpass.getuser()
+host = sys.argv[3] if len(sys.argv) > 3 else "localhost"
+try:
+    import flapi
+    conn = flapi.Connection(host, port, user)
+    conn.connect()
+    app = conn.Application.get()
+    try:
+        scene = app.get_current_scene_name()
+    except Exception:
+        scene = None
+    try:
+        open_scenes = app.get_open_scene_names()
+    except Exception:
+        open_scenes = None
+    out = {"connected": True, "port": port, "username": user,
+           "current_scene": scene, "open_scenes": open_scenes,
+           "scene_open": bool(scene)}
+    try:
+        conn.close()
+    except Exception:
+        pass
+    print(json.dumps(out))
+except Exception as e:
+    print(json.dumps({"connected": False, "port": port, "username": user,
+                      "error": type(e).__name__ + ": " + str(e)[:300]}))
+"""
+
+
+def check_app_connection(port: int = 1985, username: str = "", host: str = "localhost",
+                         project_dir: str = "", timeout: int = 15) -> dict:
+    """Probe a RUNNING Baselight app's API server (the live-app path; default localhost:1985)."""
+    import getpass
+    user = username or getpass.getuser()
+    layout = venvs.default_layout()
+    if layout is None:
+        return {"connected": False, "port": port, "host": host, "error": "no build root; run `flapi-dev-mcp init`"}
+    venv = venvs.resolve_venv_dir(project_dir, layout.version)
+    py = venvs.venv_python(venv)
+    if not py.exists():
+        return {"connected": False, "port": port, "host": host,
+                "error": "standalone venv not set up; call setup_standalone_env first"}
+    try:
+        r = subprocess.run([str(py), "-c", _APP_PROBE, str(port), user, host or "localhost"],
+                           capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"connected": False, "port": port, "error": f"timed out after {timeout}s"}
+    try:
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"connected": False, "port": port,
+                "error": (r.stderr or r.stdout).strip()[:300] or "no output"}
+
+    if not out.get("connected"):
+        err = out.get("error", "")
+        if "No module named 'flapi'" in err or "ModuleNotFoundError" in err:
+            out["remedy"] = ("the standalone venv can't import flapi — run "
+                             "setup_standalone_env(project_dir) first, then retry.")
+        else:
+            out["remedy"] = (
+                f"nothing answering FLAPI on :{port}. The running app serves its API on this "
+                f"port (default 1985, set in Baselight Prefs > Advanced > API Server). Make sure "
+                f"Baselight is running and the API server is enabled; it binds the port on startup."
+            )
+    elif not out.get("scene_open"):
+        out["remedy"] = ("connected to the app, but no scene is open. Open a scene in Baselight "
+                         "for live-session work (current scene / cursor / live thumbnails).")
+    else:
+        h = host or "localhost"
+        out["connect_idiom"] = f'flapi.Connection("{h}", {port}, "{user}")'
+        out["thumbnail_fetch"] = (f"ThumbnailManager.get_poster_uri(shot, opts) returns a relative "
+                                  f"URI; GET http://{h}:{port}<uri> for the image bytes.")
+    return out
+
+
+def connection_selector(choice: str = "", host: str = "", port: int = 0,
+                        username: str = "", project_dir: str = "") -> dict:
+    """Connection-type selector. No choice -> a menu of options with live status
+    (the agent asks the user which they want). With a choice -> tests that one and
+    returns a ready-to-paste, verified snippet (connect + close)."""
+    import getpass
+    choice = (choice or "").strip().lower()
+    user = username or getpass.getuser()
+
+    if not choice:
+        flapid = check_flapid(host or None, project_dir)
+        app = check_app_connection(port or 1985, user, "localhost", project_dir)
+        layout = venvs.default_layout()
+        return {
+            "mode": "discover",
+            "options": [
+                {"type": "flapid",
+                 "desc": "Headless daemon (:1984). Opens scenes by name; the app need not be "
+                         "running. Local auto-auth; remote needs a token.",
+                 "reachable": flapid.get("connected"), "jobs": flapid.get("jobs"),
+                 "example": 'flapi.Connection("localhost")'},
+                {"type": "app",
+                 "desc": "The live running app (:1985). Gives Application, the current OPEN scene, "
+                         "cursor/viewing state, and live thumbnails. Needs Baselight running with "
+                         "a scene open.",
+                 "reachable": app.get("connected"), "scene_open": app.get("current_scene"),
+                 "example": f'flapi.Connection("localhost", 1985, "{user}")'},
+                {"type": "launch",
+                 "desc": "Spawn a private flapid from the build — fully headless, no running "
+                         "service needed.",
+                 "available": bool(layout and layout.flapid),
+                 "example": 'conn = flapi.Connection(); conn.launch(); conn.connect()'},
+                {"type": "remote",
+                 "desc": "Connect to another machine's flapid (port 1984) or running app (1985). "
+                         "Pass host (+ port); needs a token from fl-setup-flapi-token on that host.",
+                 "example": 'flapi.Connection("<host>", <port>, "<user>")'},
+            ],
+            "guidance": ("Pick by task: live/open scene, cursor, or live thumbnails -> 'app'; "
+                         "headless batch/render/export/metadata by name -> 'flapid' (or 'launch' "
+                         "if no daemon is running); another machine -> 'remote'. Ask the user when "
+                         "unclear, then call again with choice= to get the tested snippet."),
+        }
+
+    # --- emit: test the chosen connection, return a verified snippet -----------
+    if choice == "launch":
+        layout = venvs.default_layout()
+        return {
+            "mode": "emit", "choice": "launch",
+            "available": bool(layout and layout.flapid),
+            "snippet": ('conn = flapi.Connection()\n'
+                        'conn.launch()        # spawns a private flapid from the build\n'
+                        'conn.connect()\n'
+                        '# ... work ...\n'
+                        'conn.close()'),
+            "note": "Not live-probed (it spawns a daemon). Use when no flapid is running.",
+        }
+
+    # route 'remote' by port: 1985 -> app, else flapid
+    as_app = choice == "app" or (choice == "remote" and (port or 0) == 1985)
+    if as_app:
+        h = host or "localhost"
+        res = check_app_connection(port or 1985, user, h, project_dir)
+        res["mode"] = "emit"; res["choice"] = choice
+        if res.get("connected"):
+            res["snippet"] = (f'conn = flapi.Connection("{h}", {port or 1985}, "{user}")\n'
+                              f'conn.connect()\n'
+                              f'app = conn.Application.get()\n'
+                              f'scene = app.get_current_scene()\n'
+                              f'# ... work ...\n'
+                              f'conn.close()')
+        if h not in ("localhost", "127.0.0.1", "") and not auth_token_present():
+            res["auth_note"] = f"remote needs a token — run fl-setup-flapi-token on {h} ({TOKEN_PATH})"
+        return res
+
+    # flapid (and remote-flapid)
+    res = check_flapid(host or None, project_dir)
+    h = res.get("host", host or "localhost")
+    remote = h not in ("localhost", "127.0.0.1", "")
+    res["mode"] = "emit"; res["choice"] = choice
+    res["snippet"] = (f'conn = flapi.Connection("{h}"'
+                      + (f', username="{user}"' if remote else '') + ')\n'
+                      f'conn.connect()\n'
+                      f'# ... open a scene by path, do work ...\n'
+                      f'conn.close()')
+    if remote and not auth_token_present():
+        res["auth_note"] = f"remote needs a token — run fl-setup-flapi-token on {h} ({TOKEN_PATH})"
+    return res
+
+
 def _host(hostname: str | None) -> str:
     if hostname:
         return hostname

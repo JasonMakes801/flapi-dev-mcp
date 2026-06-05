@@ -186,6 +186,33 @@ def check_flapid(hostname: str = "", project_dir: str = "") -> dict:
 
 
 @mcp.tool()
+def flapi_connection(choice: str = "", host: str = "", port: int = 0,
+                     username: str = "", project_dir: str = "") -> dict:
+    """Pick & verify how a STANDALONE script connects to FLAPI. The connection target
+    is a real fork — decide it before writing connect code.
+
+    Two-step use (an MCP tool can't ask the user, so YOU do the asking):
+    1. Call with NO choice → returns a menu of connection types with LIVE status:
+       - 'flapid'  : headless daemon :1984. Opens scenes by name; app need not run.
+                     No Application class. Local auto-auth; remote needs a token.
+       - 'app'     : the live running app :1985. Gives Application, the current OPEN
+                     scene, cursor/viewing state, live thumbnails. Needs Baselight up
+                     with a scene open. Idiom: Connection("localhost",1985,"<user>").
+       - 'launch'  : spawn a private flapid from the build — fully headless.
+       - 'remote'  : another machine's flapid/app; pass host(+port), needs a token.
+       Present these to the user and ASK which fits the task (live/open scene & cursor
+       & thumbnails → app; headless batch/render/export by name → flapid/launch).
+    2. Call again with choice= (+ host/port/username) → it TESTS that connection and
+       returns a ready-to-paste, verified `snippet` (connect + close) plus auth notes.
+
+    Use this for the connection decision; use check_standalone_readiness for the venv/
+    deps/import-flapi readiness. Pass project_dir = your cwd so it uses that venv.
+    """
+    from flapi_dev_mcp import flapi_conn
+    return flapi_conn.connection_selector(choice, host, port, username, project_dir)
+
+
+@mcp.tool()
 def check_standalone_readiness(hostname: str = "", project_dir: str = "") -> dict:
     """Are we ready to run a standalone FLAPI script? Aggregates the checks.
 
@@ -195,6 +222,12 @@ def check_standalone_readiness(hostname: str = "", project_dir: str = "") -> dic
     uses a shared home venv — avoid that.) Verifies the venv + `import flapi`,
     probes flapid connectivity, checks auth. Returns ready (bool) + per-part
     status and remedies.
+
+    This is the HEADLESS path (connect to flapid :1984, open scenes by name; the
+    app need not be running). If the script instead needs the LIVE open session —
+    the currently-open scene, current cursor/viewing state, live thumbnails, or the
+    Application class — use flapi_connection to pick the ':1985' live-app target
+    instead. When unsure which the task wants, ASK the user.
 
     Call this at the START of a standalone script task. Then, BEFORE writing
     code, call search_examples to find a similar existing script to adapt — the
