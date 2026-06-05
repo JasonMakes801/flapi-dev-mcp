@@ -9,6 +9,7 @@ Backs check_flapid() and check_standalone_readiness().
 from __future__ import annotations
 
 import json
+import socket
 import subprocess
 from pathlib import Path
 
@@ -253,6 +254,15 @@ def auth_token_present() -> bool:
     return TOKEN_PATH.is_file()
 
 
+def _port_open(port: int, host: str = "localhost", timeout: float = 1.0) -> bool:
+    """Cheap TCP check (no flapi/venv needed): is something listening there?"""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def check_flapid(hostname: str | None = None, project_dir: str = "", timeout: int = 15) -> dict:
     """Attempt a real FLAPI connection from the standalone venv."""
     host = _host(hostname)
@@ -318,11 +328,25 @@ def check_standalone_readiness(hostname: str | None = None, project_dir: str = "
     if not env.get("ok"):
         remedies.append("standalone venv / import flapi failed — see env detail")
     if not flapid.get("connected"):
-        remedies.append(
-            "flapid not reachable — start Baselight (so flapid runs), or use the "
-            "self-contained flapi.Connection().launch() pattern, which spawns a "
-            "private flapid from the build."
-        )
+        if not is_local:
+            remedies.append(
+                f"flapid not reachable on {host} — verify the host, that its flapid/app is "
+                f"running, and that your token is valid."
+            )
+        elif _port_open(1985):
+            remedies.append(
+                "No flapid on :1984, but Baselight IS running (live app API on :1985). For "
+                "live-session work (current open scene, cursor, live thumbnails) use "
+                "flapi_connection -> app. For headless work, spawn a private flapid with "
+                "flapi.Connection().launch(), or start the flapid service."
+            )
+        else:
+            remedies.append(
+                "No FLAPI server reachable: nothing on flapid :1984 or the app API :1985. "
+                "Headless: spawn a private flapid with flapi.Connection().launch() (no running "
+                "service needed), or start the flapid service. Live-app: launch Baselight (it "
+                "serves the API on :1985, then use flapi_connection -> app)."
+            )
     if not token_ok:
         remedies.append(f"no auth token for remote host — run fl-setup-flapi-token "
                         f"on {host}, token stored at {TOKEN_PATH}")
