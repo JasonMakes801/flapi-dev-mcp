@@ -72,6 +72,19 @@ def _cmd_init(args: argparse.Namespace) -> int:
     print(_bold("FLAPI Developer MCP — setup"))
     print(_dim("macOS, Python only (v1). Auto-discovering your environment…"))
 
+    # Gate: uv must exist, match host arch, and be new enough. Fail closed —
+    # otherwise we end up building venvs on a Rosetta-installed x86 uv on
+    # Apple Silicon (Steve C's case), which silently pulls wrong-arch wheels.
+    if not args.skip_arch_check:
+        from flapi_dev_mcp import arch
+        if not arch.run_gate(interactive=interactive):
+            print()
+            print(_yellow("Halting init until the uv setup is fixed. "
+                          "Re-run `flapi-dev-mcp init` when done, or "
+                          "`flapi-dev-mcp doctor` to re-check."))
+            return 1
+        print()
+
     d = disc.discover()
     dr = d.data_root
 
@@ -185,6 +198,14 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Re-run the uv + Mac arch sanity gate on demand (no init side effects)."""
+    from flapi_dev_mcp import arch
+    interactive = sys.stdin.isatty() and not args.yes
+    ok = arch.run_gate(interactive=interactive)
+    return 0 if ok else 1
+
+
 def _cmd_status(args: argparse.Namespace) -> int:
     from flapi_dev_mcp import report
     status = report.gather_status()
@@ -286,6 +307,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="FilmLight devs: also prompt for dev build/checkout roots")
     p_init.add_argument("--no-repo", action="store_true",
                         help="skip cloning the enhancements repo (e.g. offline)")
+    p_init.add_argument("--skip-arch-check", action="store_true",
+                        help="skip the uv / Mac arch sanity gate (not recommended)")
+
+    p_doctor = sub.add_parser("doctor", help="check uv presence, architecture, and version")
+    p_doctor.add_argument("--yes", "-y", action="store_true",
+                          help="non-interactive (no installer prompts)")
 
     sub.add_parser("status", help="human-readable environment/config report")
 
@@ -311,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
 
     return {
         "init": _cmd_init,
+        "doctor": _cmd_doctor,
         "status": _cmd_status,
         "set-venv": _cmd_set_venv,
         "target-running": _cmd_target_running,
