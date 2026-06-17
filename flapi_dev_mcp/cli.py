@@ -63,37 +63,32 @@ def _ask_loop(prompt: str) -> list[str]:
 
 
 def _resolve_scripts_dir(dr: "disc.DataRoot", *, kind: str) -> None:
-    """Print the chosen scripts dir, or auto-create the preferred candidate.
+    """Print the chosen scripts dir, or inform the user how to create one.
 
-    kind: 'ui' or 'server'. Picks dr.{kind}_scripts_dir if already chosen;
-    otherwise walks dr.{kind}_scripts_candidates and creates the first one whose
-    parent exists. If no candidate's parent exists, prints a warning (no
-    fallback target to create). Mutates dr to record the chosen path.
+    An absent scripts dir isn't a problem — it just means nothing of that kind
+    is deployed yet. So when no candidate exists, we render the state in dim
+    text (same idiom as "FLAPI Python: default") with a sudo `mkdir` hint that
+    only matters if the user actually plans to deploy that kind of script.
+    Parent dirs `/vol/.support` and `/usr/fl` are typically root-owned, so we
+    don't try to create them; the hint tells the user how, when needed.
     """
     label = "UI scripts dir" if kind == "ui" else "server scripts dir"
-    chosen_attr = "ui_scripts_dir" if kind == "ui" else "server_scripts_dir"
-    candidates_attr = "ui_scripts_candidates" if kind == "ui" else "server_scripts_candidates"
-    chosen: Path | None = getattr(dr, chosen_attr)
-    candidates: list[Path] = getattr(dr, candidates_attr)
+    need_hint = ("Only needed if you plan to deploy UI scripts (menu items, dialogs)."
+                 if kind == "ui" else
+                 "Only needed if you plan to deploy server scripts (QM background tasks).")
+    chosen: Path | None = getattr(dr, "ui_scripts_dir" if kind == "ui" else "server_scripts_dir")
+    candidates: list[Path] = getattr(dr, "ui_scripts_candidates" if kind == "ui" else "server_scripts_candidates")
 
     if chosen:
         _ok(label, chosen)
         return
 
-    # No candidate dir exists. Try to create the first one whose parent does —
-    # the cross-platform `/vol/.support/*` is preferred when present.
-    target = next((c for c in candidates if c.parent.is_dir()), None)
-    if target is None:
-        parents = ", ".join(str(c.parent) for c in candidates) or "(none)"
-        print(f"  {_yellow('⚠')} {label}: not found and no parent dir to create in ({parents})")
-        return
-    try:
-        target.mkdir(parents=False, exist_ok=True)
-    except OSError as e:
-        print(f"  {_yellow('⚠')} {label}: could not create {target}: {e}")
-        return
-    setattr(dr, chosen_attr, target)
-    print(f"  {_green('✓')} {label}: {target} {_dim('(created)')}")
+    # Pick the candidate whose parent exists, for a usable sudo-mkdir hint.
+    target = next((c for c in candidates if c.parent.is_dir()), candidates[0] if candidates else None)
+    print(f"  {_dim('·')} {label}: {_dim('not present (no scripts deployed yet)')}")
+    print(_dim(f"      {need_hint}"))
+    if target is not None:
+        print(_dim(f"      When needed:  sudo mkdir {target}"))
 
 
 # --------------------------------------------------------------------------- #
