@@ -63,6 +63,20 @@ def _ask_loop(prompt: str) -> list[str]:
     return out
 
 
+def _fl_vers_cmd(supported_roots: list) -> str:
+    """Build a copy-pasteable `sudo <path>/fl-vers` command from a BL7 root.
+
+    On Linux `/usr/fl/.current/bin/fl-vers` is on PATH by default; on macOS it
+    isn't. Pulling the path off the highest installed BL7 build works on both
+    OSes, since BL7 always ships fl-vers under `<base>/bin/`.
+    """
+    if not supported_roots:
+        return "sudo fl-vers"
+    chosen = max(supported_roots, key=lambda b: b.version or "")
+    base = disc.LAYOUT.resolve_base(chosen.path)
+    return f"sudo {base}/bin/fl-vers" if base else "sudo fl-vers"
+
+
 def _resolve_scripts_dir(dr: "disc.DataRoot", *, kind: str) -> None:
     """Print the chosen scripts dir, or inform the user how to create one.
 
@@ -168,7 +182,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         print()
         print(_yellow(f"The live Baselight (flapid on :1984) is {running_pre.version}, which isn't supported."))
         print(_dim(f"      Switch to a BL7+ build first, then re-run `flapi-dev-mcp init`."))
-        print(_dim(f"      Use FilmLight's version switcher:  sudo fl-vers"))
+        print(_dim(f"      Use FilmLight's version switcher:  {_fl_vers_cmd(supported_roots)}"))
         print(_dim(f"      BL7+ builds available on this host:  {avail}"))
         return 1
 
@@ -190,7 +204,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         print()
         print(_yellow(f"Note: the active install symlink ({current}) points at {target_version} (BL5/BL6, no FLAPI wheel);"))
         print(_dim(f"      defaulting to {chosen.version} instead. To make this permanent system-wide,"))
-        print(_dim(f"      switch the live Baselight with `sudo fl-vers` and re-run init."))
+        print(_dim(f"      switch the live Baselight with `{_fl_vers_cmd(supported_roots)}` and re-run init."))
 
     # Clone (or update) the canonical enhancements repo as the primary source.
     _heading("Context repo")
@@ -327,10 +341,11 @@ def _cmd_target_running(args: argparse.Namespace) -> int:
         print("Could not detect a running Baselight on :1984 (is it running?).", file=sys.stderr)
         return 1
     if not disc.is_supported_version(br.version):
+        supported = [b for b in disc.discover_release_roots() if disc.is_supported_version(b.version)]
         print(f"Running Baselight is {br.version}, which isn't supported "
               "(flapi-dev-mcp requires BL7+).", file=sys.stderr)
-        print("Switch the live version with `sudo fl-vers` first, then re-run "
-              "this command.", file=sys.stderr)
+        print(f"Switch the live version with `{_fl_vers_cmd(supported)}` first, "
+              "then re-run this command.", file=sys.stderr)
         return 1
     path = str(target)
     roots = cfg.setdefault("baselight_roots", [])
