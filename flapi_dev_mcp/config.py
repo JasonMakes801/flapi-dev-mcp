@@ -8,11 +8,20 @@ generalized `baselight_roots` list, and a generalized `sources` list.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from flapi_dev_mcp.discovery import (
-    APPS_DIR, DATA_ROOT, Discovery, fl_setup_venv, resolve_layout,
+    APPS_DIR, DATA_ROOT, LAYOUT, Discovery, fl_setup_venv, resolve_layout,
 )
+
+
+def _platform_name() -> str:
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return sys.platform
 
 CONFIG_DIR = Path.home() / ".flapi-dev-mcp"
 REPO_DIR = CONFIG_DIR / "repo"
@@ -33,8 +42,12 @@ def save_config(cfg: dict) -> Path:
 
 
 def _release_root_path(version_dir: Path) -> str:
-    """Prefer the stable `Current` symlink so the config survives upgrades."""
-    current = APPS_DIR / "Current"
+    """Prefer the stable "current build" symlink so config survives upgrades.
+
+    macOS: /Applications/Baselight/Current
+    Linux: /usr/fl/baselight
+    """
+    current = LAYOUT.current_symlink
     if current.is_symlink() and current.resolve() == version_dir.resolve():
         return str(current)
     return str(version_dir)
@@ -63,10 +76,11 @@ def build_config(
             entry["label"] = label
         baselight_roots.append(entry)
 
-    # Default to the build `/Applications/Baselight/Current` points at (the active
-    # version), not whatever sorts first — with both 6.0 and 7.0 installed, scan
-    # order would otherwise pick the wrong one.
-    current_path = str(APPS_DIR / "Current")
+    # Default to the build the "current" symlink points at (the active version),
+    # not whatever sorts first — with both 6.0 and 7.0 installed, scan order
+    # would otherwise pick the wrong one. macOS: /Applications/Baselight/Current;
+    # Linux: /usr/fl/baselight.
+    current_path = str(LAYOUT.current_symlink)
     default_root = (next((r for r in baselight_roots if r["path"] == current_path), None)
                     or (baselight_roots[0] if baselight_roots else None))
     default_root_path = default_root["path"] if default_root else None
@@ -99,7 +113,7 @@ def build_config(
         sources.append({"type": "local", "path": path, "enabled": True})
 
     return {
-        "platform": "macos",
+        "platform": _platform_name(),
         "language": "python",
         "data_root": str(DATA_ROOT),
         "flapid_host": flapid_host,

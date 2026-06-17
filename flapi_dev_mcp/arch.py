@@ -140,6 +140,7 @@ def uv_version(path: Path) -> tuple[int, int, int] | None:
 @dataclass
 class GateResult:
     ok: bool
+    is_mac: bool                 # whether this is a Mac host (gates Mac-only checks)
     host_arch: str               # 'arm64' or 'x86_64'
     is_apple_silicon: bool
     under_rosetta: bool
@@ -163,9 +164,9 @@ def check() -> GateResult:
 
     if uv is None:
         return GateResult(
-            ok=False, host_arch=arch, is_apple_silicon=is_arm, under_rosetta=rosetta,
-            uv=None, uv_arch=None, uv_version=None, uv_others=extras,
-            problems=["uv is not installed (not found on PATH)."],
+            ok=False, is_mac=is_mac, host_arch=arch, is_apple_silicon=is_arm,
+            under_rosetta=rosetta, uv=None, uv_arch=None, uv_version=None,
+            uv_others=extras, problems=["uv is not installed (not found on PATH)."],
         )
 
     u_arch = uv_arch(uv)
@@ -187,7 +188,7 @@ def check() -> GateResult:
 
     return GateResult(
         ok=not problems,
-        host_arch=arch, is_apple_silicon=is_arm, under_rosetta=rosetta,
+        is_mac=is_mac, host_arch=arch, is_apple_silicon=is_arm, under_rosetta=rosetta,
         uv=uv, uv_arch=u_arch, uv_version=u_ver, uv_others=extras,
         problems=problems,
     )
@@ -202,13 +203,21 @@ INSTALLER_CMD = "curl -LsSf https://astral.sh/uv/install.sh | sh"
 
 def _print_status(r: GateResult) -> None:
     print(_bold("uv / architecture check"))
-    print(f"  host hardware: {r.host_arch}" + (_dim("  (Apple Silicon)") if r.is_apple_silicon else _dim("  (Intel)")))
+    annotation = ""
+    if r.is_mac:
+        annotation = _dim("  (Apple Silicon)") if r.is_apple_silicon else _dim("  (Intel)")
+    print(f"  host hardware: {r.host_arch}" + annotation)
     if r.under_rosetta:
         print(_yellow("  ⚠ this Python process is running under Rosetta — the upstream uv is x86_64"))
     if r.uv:
         v = ".".join(map(str, r.uv_version)) if r.uv_version else "?"
         a = r.uv_arch or "?"
-        arch_ok = (not r.is_apple_silicon and a == "x86_64") or (r.is_apple_silicon and a in ("arm64", "universal"))
+        if not r.is_mac:
+            # On Linux uv typically has no Mach-O arch — `file` reports ELF and uv_arch
+            # may be None; we don't enforce arch parity there.
+            arch_ok = True
+        else:
+            arch_ok = (not r.is_apple_silicon and a == "x86_64") or (r.is_apple_silicon and a in ("arm64", "universal"))
         ver_ok = r.uv_version is not None and r.uv_version >= MIN_UV_VERSION
         mark = _green("✓") if (arch_ok and ver_ok) else _red("✗")
         print(f"  {mark} uv: {r.uv} ({a}, v{v})")

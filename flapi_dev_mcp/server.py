@@ -35,7 +35,7 @@ def flapi_dev_ping() -> str:
 
 @mcp.tool()
 def flapi_check_environment() -> dict:
-    """Report the discovered FLAPI environment on this machine (macOS, Python only).
+    """Report the discovered FLAPI environment on this machine (macOS + Linux, Python only).
 
     Call this early when writing any FLAPI script — it tells you what Baselight is
     installed, which venv FLAPI uses, and where the script directories live. Runs
@@ -49,7 +49,7 @@ def flapi_check_environment() -> dict:
     major = disc.baselight_major(default.version) if default else None
     active_venv = disc.resolve_venv(dr.python_dir, dr.python_minor, major)
     return {
-        "platform": "macos",
+        "platform": cfgmod._platform_name(),
         "data_root": {
             "exists": dr.exists,
             "flapi_python_path": dr.flapi_python_path,

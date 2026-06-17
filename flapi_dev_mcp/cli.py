@@ -70,7 +70,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
     interactive = sys.stdin.isatty() and not args.yes
 
     print(_bold("FLAPI Developer MCP — setup"))
-    print(_dim("macOS, Python only (v1). Auto-discovering your environment…"))
+    _platform_label = "macOS" if sys.platform == "darwin" else "Linux" if sys.platform.startswith("linux") else sys.platform
+    print(_dim(f"{_platform_label}, Python only (v1). Auto-discovering your environment…"))
 
     # Gate: uv must exist, match host arch, and be new enough. Fail closed —
     # otherwise we end up building venvs on a Rosetta-installed x86 uv on
@@ -96,16 +97,18 @@ def _cmd_init(args: argparse.Namespace) -> int:
         (_ok if dr.ui_scripts_dir else _miss)("UI scripts dir", dr.ui_scripts_dir or "scripts/")
         (_ok if dr.server_scripts_dir else _miss)("server scripts dir", dr.server_scripts_dir or "server-scripts/")
     else:
-        _miss("FilmLight data root (/Library/Application Support/FilmLight)")
+        _miss(f"FilmLight data root ({disc.LAYOUT.data_root})")
 
     _heading(f"Release build roots ({len(d.release_roots)} found)")
     for br in d.release_roots:
-        _ok(f"{br.version}", br.app)
+        # On macOS .app is the resolved bundle; on Linux it's None and the build
+        # root *is* the path the user sees.
+        _ok(f"{br.version}", br.app or br.path)
         print(_dim(f"      wheel: {br.wheel.name if br.wheel else '—'}  flapid: {'yes' if br.flapid else 'no'}  "
                    f"docs: {'yes' if br.docs_html else 'no'}  schema: {'yes' if br.schema else 'no'}  "
                    f"examples: {'yes' if br.examples else 'no'}"))
     if not d.release_roots:
-        _miss("no release builds under /Applications/Baselight")
+        _miss(f"no release builds under {disc.LAYOUT.apps_dir}")
 
     # Clone (or update) the canonical enhancements repo as the primary source.
     _heading("Context repo")
@@ -164,9 +167,11 @@ def _cmd_init(args: argparse.Namespace) -> int:
         _heading("Running flapid")
         if target_v and running.version != target_v:
             print(f"  {_yellow('•')} mismatch: targeting {target_v}, but flapid is running build {running.version}")
-            if target_layout and target_layout.app:
-                print(_dim(f"      match the server to your target:  "
-                           f"sudo {target_layout.app}/Contents/bin/fl-service restart flapi"))
+            if target_layout is not None:
+                base = disc.LAYOUT.resolve_base(target_layout.path)
+                if base is not None:
+                    print(_dim(f"      match the server to your target:  "
+                               f"sudo {base}/bin/fl-service restart flapi"))
             print(_dim(f"      or switch target to the running build:  flapi-dev-mcp target-running"))
         else:
             _ok("running build matches target", running.version)
@@ -233,10 +238,13 @@ def _cmd_target_running(args: argparse.Namespace) -> int:
         print("No config. Run `flapi-dev-mcp init` first.", file=sys.stderr)
         return 1
     br = disc.detect_running_build()
-    if br is None or br.app is None:
+    # On macOS we want the .app bundle (br.app); on Linux there's no .app and
+    # br.path IS the build root. Use br.app if present, else br.path.
+    target = br.app if (br and br.app) else (br.path if br else None)
+    if br is None or target is None:
         print("Could not detect a running Baselight on :1984 (is it running?).", file=sys.stderr)
         return 1
-    path = str(br.app)
+    path = str(target)
     roots = cfg.setdefault("baselight_roots", [])
     if not any(r.get("path") == path for r in roots):
         roots.append({"kind": br.kind, "path": path, "version": br.version,

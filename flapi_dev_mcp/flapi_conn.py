@@ -14,10 +14,13 @@ import subprocess
 from pathlib import Path
 
 from flapi_dev_mcp import config as cfgmod
+from flapi_dev_mcp import discovery as disc
 from flapi_dev_mcp import venvs
 
-# macOS token location (per FLAPI docs).
-TOKEN_PATH = Path.home() / "Library" / "Preferences" / "FilmLight" / "flapi-token"
+# Per-OS token location (per FLAPI docs):
+#   macOS: ~/Library/Preferences/FilmLight/flapi-token
+#   Linux: ~/.filmlight/flapi-token
+TOKEN_PATH = disc.LAYOUT.token_path
 
 # Connect, list jobs, close — all in the venv subprocess. Host is argv[1].
 _PROBE = r"""
