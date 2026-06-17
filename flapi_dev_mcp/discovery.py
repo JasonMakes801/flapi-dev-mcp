@@ -40,8 +40,12 @@ class PlatformLayout:
     apps_dir: Path                    # where installed versions live
     apps_child_glob: str              # glob under apps_dir for version dirs/roots
     python_dir: Path                  # parent of <pyver>...-venv dirs
-    ui_scripts_dir: Path              # Baselight UI scripts
-    server_scripts_dir: Path          # flapid server scripts
+    # Script-deploy dirs are listed as candidates in preference order. The
+    # cross-platform convention `/vol/.support/{scripts,server-scripts}` is
+    # tried first (typically a symlink to the OS-native dir); the OS-native
+    # path is the fallback. discover_data_root picks the first that exists.
+    ui_scripts_candidates: tuple[Path, ...]
+    server_scripts_candidates: tuple[Path, ...]
     site_prefs_path: Path | None      # facility-wide prefs; may be absent
     user_prefs_path: Path | None      # per-user prefs; exists once Baselight launched
     prefs_keys: tuple[str, ...]       # search order inside the prefs files
@@ -63,6 +67,10 @@ def _resolve_base_linux(root: Path) -> Path | None:
 
 def _platform_layout() -> PlatformLayout:
     home = Path.home()
+    # FilmLight's cross-platform convention. On BL hosts these are symlinks to
+    # the OS-native dirs; on dev workstations they may be absent entirely.
+    vol_ui = Path("/vol/.support/scripts")
+    vol_server = Path("/vol/.support/server-scripts")
     if sys.platform == "darwin":
         data = Path("/Library/Application Support/FilmLight")
         return PlatformLayout(
@@ -70,8 +78,8 @@ def _platform_layout() -> PlatformLayout:
             apps_dir=Path("/Applications/Baselight"),
             apps_child_glob="*",
             python_dir=data / "python",
-            ui_scripts_dir=data / "scripts",
-            server_scripts_dir=data / "server-scripts",
+            ui_scripts_candidates=(vol_ui, data / "scripts"),
+            server_scripts_candidates=(vol_server, data / "server-scripts"),
             site_prefs_path=data / "Baselight" / "blsiteprefs",
             user_prefs_path=home / "Library" / "Preferences" / "FilmLight" / "Baselight" / "bluserprefs",
             prefs_keys=("flapi_python_path__Mac", "flapi_python_path"),
@@ -87,8 +95,8 @@ def _platform_layout() -> PlatformLayout:
             apps_dir=fl,
             apps_child_glob="baselight-*",
             python_dir=fl / "python",
-            ui_scripts_dir=fl / "scripts",
-            server_scripts_dir=fl / "server-scripts",
+            ui_scripts_candidates=(vol_ui, fl / "scripts"),
+            server_scripts_candidates=(vol_server, fl / "server-scripts"),
             site_prefs_path=None,  # facility-wide; not present on a fresh BL1
             user_prefs_path=home / ".baselight" / "bluserprefs",
             prefs_keys=("flapi_python_path__Linux", "flapi_python_path"),
@@ -118,12 +126,18 @@ class DataRoot:
     exists: bool
     site_prefs: Path | None = None
     user_prefs: Path | None = None
-    flapi_python_path: str | None = None   # base interpreter named by prefs
-    python_minor: str | None = None        # e.g. '3.11', parsed from flapi_python_path
+    # `flapi_python_path` is the value of `flapi_python_path__<OS>` (or the
+    # unqualified `flapi_python_path`) from bluserprefs / blsiteprefs. It is an
+    # *override* — absent on a stock install, in which case the venv comes from
+    # `fl-setup-flapi-scripts -e` and there is no problem to report.
+    flapi_python_path: str | None = None
+    python_minor: str | None = None
     python_dir: Path | None = None
     venvs: list[Path] = field(default_factory=list)
-    ui_scripts_dir: Path | None = None
-    server_scripts_dir: Path | None = None
+    ui_scripts_dir: Path | None = None                       # chosen path
+    server_scripts_dir: Path | None = None                   # chosen path
+    ui_scripts_candidates: list[Path] = field(default_factory=list)
+    server_scripts_candidates: list[Path] = field(default_factory=list)
 
 
 def parse_site_prefs(site_prefs: Path) -> str | None:
@@ -230,8 +244,8 @@ def discover_data_root() -> DataRoot:
     python_dir = LAYOUT.python_dir
     venvs = sorted(p for p in python_dir.glob("*-venv") if p.is_dir()) if python_dir.is_dir() else []
 
-    ui = LAYOUT.ui_scripts_dir
-    server = LAYOUT.server_scripts_dir
+    ui = next((p for p in LAYOUT.ui_scripts_candidates if p.is_dir()), None)
+    server = next((p for p in LAYOUT.server_scripts_candidates if p.is_dir()), None)
 
     return DataRoot(
         root=root,
@@ -242,8 +256,10 @@ def discover_data_root() -> DataRoot:
         python_minor=_python_minor(flapi_python),
         python_dir=python_dir if python_dir.is_dir() else None,
         venvs=venvs,
-        ui_scripts_dir=ui if ui.is_dir() else None,
-        server_scripts_dir=server if server.is_dir() else None,
+        ui_scripts_dir=ui,
+        server_scripts_dir=server,
+        ui_scripts_candidates=list(LAYOUT.ui_scripts_candidates),
+        server_scripts_candidates=list(LAYOUT.server_scripts_candidates),
     )
 
 

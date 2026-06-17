@@ -62,6 +62,40 @@ def _ask_loop(prompt: str) -> list[str]:
     return out
 
 
+def _resolve_scripts_dir(dr: "disc.DataRoot", *, kind: str) -> None:
+    """Print the chosen scripts dir, or auto-create the preferred candidate.
+
+    kind: 'ui' or 'server'. Picks dr.{kind}_scripts_dir if already chosen;
+    otherwise walks dr.{kind}_scripts_candidates and creates the first one whose
+    parent exists. If no candidate's parent exists, prints a warning (no
+    fallback target to create). Mutates dr to record the chosen path.
+    """
+    label = "UI scripts dir" if kind == "ui" else "server scripts dir"
+    chosen_attr = "ui_scripts_dir" if kind == "ui" else "server_scripts_dir"
+    candidates_attr = "ui_scripts_candidates" if kind == "ui" else "server_scripts_candidates"
+    chosen: Path | None = getattr(dr, chosen_attr)
+    candidates: list[Path] = getattr(dr, candidates_attr)
+
+    if chosen:
+        _ok(label, chosen)
+        return
+
+    # No candidate dir exists. Try to create the first one whose parent does —
+    # the cross-platform `/vol/.support/*` is preferred when present.
+    target = next((c for c in candidates if c.parent.is_dir()), None)
+    if target is None:
+        parents = ", ".join(str(c.parent) for c in candidates) or "(none)"
+        print(f"  {_yellow('⚠')} {label}: not found and no parent dir to create in ({parents})")
+        return
+    try:
+        target.mkdir(parents=False, exist_ok=True)
+    except OSError as e:
+        print(f"  {_yellow('⚠')} {label}: could not create {target}: {e}")
+        return
+    setattr(dr, chosen_attr, target)
+    print(f"  {_green('✓')} {label}: {target} {_dim('(created)')}")
+
+
 # --------------------------------------------------------------------------- #
 # init
 # --------------------------------------------------------------------------- #
@@ -92,10 +126,15 @@ def _cmd_init(args: argparse.Namespace) -> int:
     _heading("Data root")
     if dr.exists:
         _ok("path", dr.root)
-        (_ok if dr.flapi_python_path else _miss)("FLAPI Python", dr.flapi_python_path or "FLAPI Python")
+        # `flapi_python_path` is an override — its absence is the default state,
+        # not a problem. Distinguish "override set" from "using install default".
+        if dr.flapi_python_path:
+            _ok("FLAPI Python (override)", dr.flapi_python_path)
+        else:
+            print(f"  {_dim('·')} FLAPI Python: {_dim('default (no override set in bluserprefs/blsiteprefs)')}")
         _ok("venvs", ", ".join(v.name for v in dr.venvs) or "(none)")
-        (_ok if dr.ui_scripts_dir else _miss)("UI scripts dir", dr.ui_scripts_dir or "scripts/")
-        (_ok if dr.server_scripts_dir else _miss)("server scripts dir", dr.server_scripts_dir or "server-scripts/")
+        _resolve_scripts_dir(dr, kind="ui")
+        _resolve_scripts_dir(dr, kind="server")
     else:
         _miss(f"FilmLight data root ({disc.LAYOUT.data_root})")
 
