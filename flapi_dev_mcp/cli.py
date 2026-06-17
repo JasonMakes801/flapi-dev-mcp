@@ -158,6 +158,20 @@ def _cmd_init(args: argparse.Namespace) -> int:
         print(_dim(f"      BL5/BL6 use a different FLAPI delivery model and aren't supported."))
         return 1
 
+    # If a live flapid is running but it's BL5/BL6, scripts the agent writes
+    # will hit a wheel-vs-server version mismatch the moment they connect.
+    # Block init and tell the user to switch with `fl-vers` first; once the
+    # live Baselight is BL7+, init will sail through.
+    running_pre = disc.detect_running_build()
+    if running_pre and running_pre.version and not disc.is_supported_version(running_pre.version):
+        avail = ", ".join(br.version for br in supported_roots) or "(none installed)"
+        print()
+        print(_yellow(f"The live Baselight (flapid on :1984) is {running_pre.version}, which isn't supported."))
+        print(_dim(f"      Switch to a BL7+ build first, then re-run `flapi-dev-mcp init`."))
+        print(_dim(f"      Use FilmLight's version switcher:  sudo fl-vers"))
+        print(_dim(f"      BL7+ builds available on this host:  {avail}"))
+        return 1
+
     # If the "current" symlink points at a BL5/BL6 build but a BL7+ build is
     # also installed, the config writer will silently promote the default. Tell
     # the user so the override isn't a surprise later. We can't rely on the BL6
@@ -175,8 +189,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
         chosen = max(supported_roots, key=lambda b: b.version or "")
         print()
         print(_yellow(f"Note: the active install symlink ({current}) points at {target_version} (BL5/BL6, no FLAPI wheel);"))
-        print(_dim(f"      defaulting to {chosen.version} instead. Use `flapi-dev-mcp target-running`"))
-        print(_dim(f"      to switch later, or set `default_root` in the config manually."))
+        print(_dim(f"      defaulting to {chosen.version} instead. To make this permanent system-wide,"))
+        print(_dim(f"      switch the live Baselight with `sudo fl-vers` and re-run init."))
 
     # Clone (or update) the canonical enhancements repo as the primary source.
     _heading("Context repo")
@@ -311,6 +325,12 @@ def _cmd_target_running(args: argparse.Namespace) -> int:
     target = br.app if (br and br.app) else (br.path if br else None)
     if br is None or target is None:
         print("Could not detect a running Baselight on :1984 (is it running?).", file=sys.stderr)
+        return 1
+    if not disc.is_supported_version(br.version):
+        print(f"Running Baselight is {br.version}, which isn't supported "
+              "(flapi-dev-mcp requires BL7+).", file=sys.stderr)
+        print("Switch the live version with `sudo fl-vers` first, then re-run "
+              "this command.", file=sys.stderr)
         return 1
     path = str(target)
     roots = cfg.setdefault("baselight_roots", [])
