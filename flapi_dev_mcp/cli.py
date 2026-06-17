@@ -13,6 +13,7 @@ discovered defaults without prompting.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -159,18 +160,21 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
     # If the "current" symlink points at a BL5/BL6 build but a BL7+ build is
     # also installed, the config writer will silently promote the default. Tell
-    # the user so the override isn't a surprise later.
+    # the user so the override isn't a surprise later. We can't rely on the BL6
+    # build being in d.release_roots — it isn't (no wheel ⇒ filtered out at
+    # discovery) — so resolve the symlink ourselves and parse the version off
+    # the target dir name.
     current = disc.LAYOUT.current_symlink
     try:
-        current_target_name = current.resolve().name if current.exists() else None
+        target_name = current.resolve().name if current.exists() else ""
     except OSError:
-        current_target_name = None
-    current_match = next((br for br in d.release_roots
-                          if br.path.name == current_target_name or br.path == current), None)
-    if current_match and not disc.is_supported_version(current_match.version):
-        chosen = max((br for br in supported_roots), key=lambda b: b.version or "")
+        target_name = ""
+    m = re.search(r"baselight-(.+)$", target_name)
+    target_version = m.group(1) if m else None
+    if target_version and not disc.is_supported_version(target_version) and supported_roots:
+        chosen = max(supported_roots, key=lambda b: b.version or "")
         print()
-        print(_yellow(f"Note: the active install symlink points at {current_match.version} (unsupported);"))
+        print(_yellow(f"Note: the active install symlink ({current}) points at {target_version} (BL5/BL6, no FLAPI wheel);"))
         print(_dim(f"      defaulting to {chosen.version} instead. Use `flapi-dev-mcp target-running`"))
         print(_dim(f"      to switch later, or set `default_root` in the config manually."))
 
